@@ -213,27 +213,35 @@ def get_status() -> str:
 
 def get_report() -> str:
     today = datetime.now(IST).strftime("%Y-%m-%d")
-    report_file = ROOT / "journaling" / "reports" / f"report_{today}.json"
+    reports_dir = ROOT / "journaling" / "reports"
+    report_file = reports_dir / f"report_{today}.json"
 
+    label = "TODAY'S REPORT"
     if not report_file.exists():
-        account_file = ROOT / "journaling" / "account_state.json"
-        account_val = "N/A"
-        daily_pnl = "N/A"
-        if account_file.exists():
-            try:
-                d = json.loads(account_file.read_text())
-                account_val = f"Rs.{d.get('account_value', 0):,.0f}"
-                daily_pnl   = f"Rs.{d.get('daily_pnl', 0):+.2f}"
-            except Exception:
-                pass
-        return (
-            f"TODAY'S REPORT\n"
-            f"------------------\n"
-            f"EOD report not yet generated (market may still be open).\n"
-            f"Account : {account_val}\n"
-            f"Day P&L : {daily_pnl}\n"
-            f"Time    : {datetime.now(IST).strftime('%I:%M %p IST')}"
-        )
+        reports = sorted(reports_dir.glob("report_*.json"), reverse=True) if reports_dir.exists() else []
+        if reports:
+            report_file = reports[0]
+            date_str = report_file.stem.replace("report_", "")
+            label = f"LAST REPORT ({date_str})"
+        else:
+            account_file = ROOT / "journaling" / "account_state.json"
+            account_val = "N/A"
+            daily_pnl = "N/A"
+            if account_file.exists():
+                try:
+                    d = json.loads(account_file.read_text())
+                    account_val = f"Rs.{d.get('account_value', 0):,.0f}"
+                    daily_pnl   = f"Rs.{d.get('daily_pnl', 0):+.2f}"
+                except Exception:
+                    pass
+            return (
+                f"NO REPORTS YET\n"
+                f"------------------\n"
+                f"Bot hasn't completed a trading day yet.\n"
+                f"Account : {account_val}\n"
+                f"Day P&L : {daily_pnl}\n"
+                f"Time    : {datetime.now(IST).strftime('%I:%M %p IST')}"
+            )
 
     try:
         r = json.loads(report_file.read_text())
@@ -244,7 +252,7 @@ def get_report() -> str:
         ) if r.get('trades', 0) > 0 else "Trades : 0 — Stay flat day\n"
 
         return (
-            f"TODAY'S REPORT\n"
+            f"{label}\n"
             f"------------------\n"
             f"{trades_line}"
             f"Net P&L : Rs.{r.get('net_pnl', 0):+.2f}\n"
