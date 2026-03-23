@@ -196,10 +196,10 @@ def main():
             notifier.send(
                 f"📊 <b>BOT STARTED — STAY FLAT</b>\n"
                 f"Regime: {regime.regime.value.upper()}  |  VIX: {vix:.1f}\n"
-                f"No trades today. Hourly updates will follow."
+                f"No trades today. Updates every 15 mins will follow."
             )
-        # Stay-flat monitoring loop — sends hourly updates, exits at market close
-        last_hourly_report_hour = -1
+        # Stay-flat monitoring loop — sends 15-min updates, exits at market close
+        last_status_slot = -1
         hourly_steps = []
         while True:
             now = now_ist()
@@ -221,8 +221,9 @@ def main():
                         f"Account: Rs.{account_value:,.0f}"
                     )
                 break
-            if config["notifications"]["enabled"] and now.hour != last_hourly_report_hour:
-                last_hourly_report_hour = now.hour
+            cur_slot = now.hour * 4 + now.minute // 15  # changes every 15 mins
+            if config["notifications"]["enabled"] and cur_slot != last_status_slot:
+                last_status_slot = cur_slot
                 hourly_steps = []
                 # Refresh VIX
                 try:
@@ -256,14 +257,14 @@ def main():
                     kill_switch=False,
                     steps=hourly_steps,
                 )
-                logger.info(f"Stay-flat hourly status sent for {now.strftime('%H:00')}")
+                logger.info(f"Stay-flat 15-min status sent at {now.strftime('%H:%M')}")
             time.sleep(60)
         return
 
     rejected_trades = []
     force_exit_time = config["strategy"].get("force_exit_ist", "15:15")
-    last_hourly_report_hour = -1
-    hourly_steps = []  # accumulates steps each hour, resets on new hour report
+    last_status_slot = -1
+    hourly_steps = []  # accumulates steps each 15 mins, resets on new slot
 
     # ── Main trading loop ─────────────────────────────────────────
     logger.info("Entering main trading loop...")
@@ -421,9 +422,10 @@ def main():
         # Save account state
         journal.save_account_state(risk.account_value, risk.daily_pnl)
 
-        # ── Hourly status report ───────────────────────────────────
-        if config["notifications"]["enabled"] and now.hour != last_hourly_report_hour:
-            last_hourly_report_hour = now.hour
+        # ── 15-min status report ──────────────────────────────────
+        cur_slot = now.hour * 4 + now.minute // 15
+        if config["notifications"]["enabled"] and cur_slot != last_status_slot:
+            last_status_slot = cur_slot
             open_trades_info = [
                 {
                     "symbol": t.symbol,
@@ -447,7 +449,7 @@ def main():
                 steps=hourly_steps,
             )
             hourly_steps = []  # reset for next hour
-            logger.info(f"Hourly status report sent for {now.strftime('%H:00')}")
+            logger.info(f"15-min status report sent at {now.strftime('%H:%M')}")
 
         # Sleep until next 15-min candle
         sleep_seconds = 60  # Check every minute; adapt to 15-min in production
