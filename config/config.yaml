@@ -1,0 +1,111 @@
+bot:
+  name: "ZerodhaBot"
+  version: "1.0.0"
+  mode: "paper"                    # paper | semi_auto | live
+  timezone: "Asia/Kolkata"
+  log_level: "INFO"
+  log_dir: "journaling/logs"
+
+account:
+  starting_capital: 5000
+  currency: "INR"
+  persist_state_to: "journaling/account_state.json"
+
+capital_tiers:
+  auto_detect: true
+  notify_on_tier_change: true
+
+risk:
+  # null = use tier defaults (recommended — scales with capital automatically)
+  risk_per_trade_pct: null
+  daily_loss_pct: null
+  weekly_dd_pct: null
+  monthly_dd_pct: null
+  deployment_pct: null
+  max_per_trade_pct: null
+  max_trades_per_day: null
+  max_open_positions: null
+  # Always set explicitly
+  min_rr_ratio: 1.8
+  cooldown_minutes_after_loss: 30
+  consecutive_loss_halt: 3
+  min_trade_value: 2000
+  size_reduction_after_losses: 0.50
+  setup_quality_min: "B"
+
+strategy:
+  active:
+    - "ema_pullback"
+    - "etf_momentum"
+  primary_timeframe: "15m"
+  daily_trend_filter: true
+  no_trade_before_ist: "09:45"
+  no_trade_after_ist: "14:45"
+  force_exit_ist: "15:15"
+
+market_research:
+  universe: "NIFTY_200"
+  etf_symbols:
+    - "NIFTYBEES"
+    - "BANKBEES"
+    - "GOLDBEES"
+    - "JUNIORBEES"
+    - "ITBEES"
+  universe_size: 50
+  max_watchlist_size: 10
+  max_active_candidates: 5
+  min_score_for_watchlist: 60
+  min_avg_daily_turnover: 50000000
+  min_avg_daily_volume: 200000
+  min_price: 50
+  max_price: 10000
+  min_atr_pct: 0.5
+  max_atr_pct: 5.0
+  vix_reduce_threshold: 18.0
+  vix_halt_threshold: 20.0
+  vix_kill_threshold: 30.0
+  nifty_fall_halt_pct: -1.5
+  nifty_fall_kill_pct: -2.5
+  watchlist_refresh_times_ist:
+    - "09:20"
+    - "10:00"
+    - "14:00"
+  avoid_event_within_days: 3
+
+data:
+  provider_mode: "free_only"       # free_only | zerodha | zerodha_with_fallback
+  cache_dir: ".cache/market_data"
+  cache_expiry_minutes: 15
+  historical_lookback_days: 365
+  intraday_lookback_days: 3
+
+notifications:
+  enabled: true
+  telegram_bot_token: ""
+  telegram_chat_id: ""
+  notify_on:
+    - trade_entry
+    - trade_exit
+    - kill_switch
+    - tier_change
+    - daily_summary
+    - api_error
+
+reporting:
+  journal_dir: "journaling/logs"
+  report_dir: "reporting/output"
+  daily_report_time_ist: "15:45"
+  save_rejected_trades: true
+
+backtesting:
+  default_start: "2022-01-01"
+  default_end: "2024-01-01"
+  slippage_pct: 0.10
+  commission_per_order: 20.0
+  results_dir: "backtesting/results"
+
+dashboard:
+  enabled: true
+  host: "localhost"
+  port: 8501
+  auto_refresh_seconds: 30

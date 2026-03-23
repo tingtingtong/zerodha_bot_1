@@ -1,0 +1,43 @@
+# Secrets
+.env
+config/.zerodha_token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Data cache
+.cache/
+*.csv.cache
+
+# Logs and reports
+journaling/logs/
+journaling/reports/
+journaling/account_state.json
+journaling/bot.pid
+reporting/output/
+backtesting/results/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd C:/Users/nithi/zerodhaBot && python -c \"\nimport sys\nsys.path.insert\\(0, '.'\\)\nfrom config.capital_tiers import get_tier\nfrom backtesting.performance_metrics import PerformanceCalculator\nfrom journaling.trade_journal import TradeJournal\nfrom journaling.audit_logger import AuditLogger\nfrom risk.position_sizer import PositionSizer\nfrom brokers.base import OrderType, OrderSide, ProductType, OrderStatus\nfrom brokers.simulated_broker import SimulatedBroker\nfrom utils.charge_calculator import calculate_charges, estimate_round_trip_charges\nfrom reporting.daily_report import DailyReportGenerator\nprint\\('All core imports OK'\\)\nt = get_tier\\(25000\\)\nprint\\(f'Tier for 25K: {t.name}'\\)\nt2 = get_tier\\(200000\\)\nprint\\(f'Tier for 2L: {t2.name}'\\)\nt3 = get_tier\\(5000000\\)\nprint\\(f'Tier for 50L: {t3.name}'\\)\n\")",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python -m pytest tests/ -v 2>&1)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python main.py --mode paper 2>&1)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python -c \"\nimport sys, warnings\nsys.path.insert\\(0, '.'\\)\nwarnings.filterwarnings\\('ignore'\\)\n\nfrom data_providers.provider_registry import DataProviderRegistry\nfrom research.market_regime import MarketRegimeDetector\nfrom datetime import datetime, timedelta\nimport pytz\n\nIST = pytz.timezone\\('Asia/Kolkata'\\)\nnow = datetime.now\\(IST\\)\nreg = DataProviderRegistry.build_free_only\\(\\)\n\nprint\\('Fetching NIFTY50 daily data...'\\)\ndf = reg.get_historical\\('^NSEI', '1d', now - timedelta\\(days=300\\), now\\)\nprint\\(f'NIFTY rows: {len\\(df\\)}, latest close: {df[\\\\\"close\\\\\"].iloc[-1]:.0f}'\\)\n\ndetector = MarketRegimeDetector\\(\\)\nresult = detector.detect\\(df, vix=15.0\\)\nprint\\(f'Regime: {result.regime.value}'\\)\nprint\\(f'Recommendation: {result.recommendation}'\\)\nprint\\(f'Reason: {result.reason}'\\)\n\" 2>&1 | grep -v \"^\\\\[\" | grep -v \"^Exception\" | grep -v \"traceback\" | grep -v \"File \" | head -20)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python -c \"\nimport yfinance as yf\n# Try different tickers for NIFTY\nfor sym in ['^NSEI', 'NIFTYBEES.NS', '%5ENSEI']:\n    try:\n        df = yf.Ticker\\(sym\\).history\\(period='5d', interval='1d'\\)\n        print\\(f'{sym}: {len\\(df\\)} rows, last close={df[\\\\\"Close\\\\\"].iloc[-1]:.0f if len\\(df\\) else \\\\\"N/A\\\\\":.0f}'\\)\n    except Exception as e:\n        print\\(f'{sym}: ERROR {e}'\\)\n\" 2>&1 | grep -v \"^\\\\[\" | grep -v \"^\\\\$\" | grep -v \"possibly\")",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python backtest_runner.py --symbol NIFTYBEES --strategy etf_momentum --start 2023-01-01 --end 2025-01-01 --capital 20000 2>&1)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python backtest_runner.py --symbol GOLDBEES --strategy etf_momentum --start 2026-01-20 --end 2026-03-14 --capital 20000 2>&1)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python -m pytest tests/ -v --tb=short 2>&1 | tail -10)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python -m pytest tests/ -v --tb=short 2>&1 | tail -12)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && python -c \"from brokers.base import ProductType; print\\([e.name for e in ProductType]\\)\")",
+      "Bash(python simulate_trading.py 2>&1)",
+      "Bash(pip install:*)",
+      "Bash(python -m playwright install chromium 2>&1 | tail -5)",
+      "Bash(python -c \"import pyotp; import playwright; print\\('pyotp:', pyotp.__version__\\); print\\('playwright: ok'\\)\")",
+      "Bash(python -c \"import pyotp; import playwright.sync_api; print\\('pyotp ok'\\); print\\('playwright ok'\\)\")",
+      "Bash(python brokers/zerodha_auto_login.py 2>&1)",
+      "Bash(python brokers/zerodha_auto_login.py --visible 2>&1)",
+      "Bash(python -c \"import pyotp; from dotenv import load_dotenv; import os; load_dotenv\\(\\); print\\('Bot code:', pyotp.TOTP\\(os.getenv\\('ZERODHA_TOTP_SECRET'\\)\\).now\\(\\)\\)\")",
+      "Bash(python brokers/zerodha_auto_login.py --totp 543049 2>&1)",
+      "Bash(python brokers/zerodha_auto_login.py --totp 950443 2>&1)",
+      "Bash(python -c \"import pyotp; from dotenv import load_dotenv; import os; load_dotenv\\(\\); secret = os.getenv\\('ZERODHA_TOTP_SECRET'\\); print\\('Secret found:', bool\\(secret\\)\\); print\\('Secret \\(masked\\):', secret[:4] + '...' + secret[-4:] if secret and len\\(secret\\) > 8 else secret\\); print\\('Bot code:', pyotp.TOTP\\(secret\\).now\\(\\) if secret else 'NO SECRET'\\)\")",
+      "Bash(python main.py --mode paper 2>&1)",
+      "Bash(python -c \"import pyotp; from dotenv import load_dotenv; import os; load_dotenv\\(\\); secret = os.getenv\\('ZERODHA_TOTP_SECRET'\\); print\\('Bot code:', pyotp.TOTP\\(secret\\).now\\(\\)\\)\")",
+      "Bash(powershell -Command \"Get-ScheduledTask -TaskName 'ZerodhaBot' | Select-Object TaskName, State, @{N='NextRun';E={\\(Get-ScheduledTaskInfo -TaskName $_.TaskName\\).NextRunTime}}\" 2>&1)",
+      "Bash(powershell -Command \"\\(Get-ScheduledTaskInfo -TaskName 'ZerodhaBot'\\).NextRunTime\" 2>&1)",
+      "Bash(python -c \"\nimport sys; sys.path.insert\\(0, '.'\\)\nfrom utils.time_utils import now_ist, is_market_open, minutes_to_close\nnow = now_ist\\(\\)\nprint\\(f'Current IST time : {now.strftime\\(\\\\\"%I:%M %p\\\\\"\\)}'\\)\nprint\\(f'Market open      : {is_market_open\\(\\)}'\\)\ntry:\n    mins = minutes_to_close\\(\\)\n    print\\(f'Minutes to close : {mins}'\\)\nexcept:\n    pass\n\")",
+      "Skill(claude-api)",
+      "Bash(python -c \"import anthropic; print\\(anthropic.__version__\\)\" 2>&1)",
+      "Bash(python -c \"import claude_agent_sdk; print\\('version ok'\\)\" 2>&1)",
+      "Bash(python utils/whatsapp_commander.py)",
+      "Bash(python -c \"\nimport requests\n\ninstance_id = '7107560187'\napi_token = 'cee1b3b45f5341569fde3f440669e496088d1d98825043f5a0'\nbase = f'https://api.green-api.com/waInstance{instance_id}'\n\nr = requests.post\\(\n    f'{base}/sendMessage/{api_token}',\n    json={'chatId': '917406260516@c.us', 'message': 'ZerodhaBot test message - connection working!'},\n    timeout=10\n\\)\nprint\\('Send:', r.status_code, r.text\\)\n\")"
+    ]
+  }
+}
