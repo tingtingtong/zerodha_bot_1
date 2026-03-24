@@ -26,7 +26,7 @@ risk:
   max_trades_per_day: null
   max_open_positions: null
   # Always set explicitly
-  min_rr_ratio: 1.8
+  min_rr_ratio: 1.5
   cooldown_minutes_after_loss: 30
   consecutive_loss_halt: 3
   min_trade_value: 2000
@@ -37,6 +37,7 @@ strategy:
   active:
     - "ema_pullback"
     - "etf_momentum"
+    - "mean_reversion"
   primary_timeframe: "15m"
   daily_trend_filter: true
   no_trade_before_ist: "09:45"

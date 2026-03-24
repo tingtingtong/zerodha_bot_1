@@ -41,7 +41,10 @@
       "Bash(wc -l /c/Users/nithi/zerodhaBot/brokers/*.py)",
       "Bash(wc -l /c/Users/nithi/zerodhaBot/research/*.py)",
       "Bash(cd C:/Users/nithi/zerodhaBot && python -c \"\nimport strategies.base_strategy\nimport strategies.ema_pullback\nimport strategies.etf_momentum\nimport risk.risk_engine\nimport execution.order_manager\nimport execution.trade_state_machine\nimport research.watchlist_builder\nimport research.stock_screener\nimport config.capital_tiers\nimport journaling.trade_journal\nprint\\('All imports OK'\\)\n\" 2>&1)",
-      "Bash(cd C:/Users/nithi/zerodhaBot && python -c \"\nimport ast, sys\nfiles = [\n    'strategies/base_strategy.py','strategies/ema_pullback.py','strategies/etf_momentum.py',\n    'risk/risk_engine.py','execution/order_manager.py','execution/trade_state_machine.py',\n    'research/watchlist_builder.py','research/stock_screener.py','config/capital_tiers.py',\n    'journaling/trade_journal.py','main.py'\n]\nfor f in files:\n    try:\n        ast.parse\\(open\\(f, encoding='utf-8'\\).read\\(\\)\\)\n        print\\(f'OK  {f}'\\)\n    except SyntaxError as e:\n        print\\(f'ERR {f}: {e}'\\)\n\" 2>&1)"
+      "Bash(cd C:/Users/nithi/zerodhaBot && python -c \"\nimport ast, sys\nfiles = [\n    'strategies/base_strategy.py','strategies/ema_pullback.py','strategies/etf_momentum.py',\n    'risk/risk_engine.py','execution/order_manager.py','execution/trade_state_machine.py',\n    'research/watchlist_builder.py','research/stock_screener.py','config/capital_tiers.py',\n    'journaling/trade_journal.py','main.py'\n]\nfor f in files:\n    try:\n        ast.parse\\(open\\(f, encoding='utf-8'\\).read\\(\\)\\)\n        print\\(f'OK  {f}'\\)\n    except SyntaxError as e:\n        print\\(f'ERR {f}: {e}'\\)\n\" 2>&1)",
+      "Bash(find \"C:\\\\Users\\\\nithi\\\\zerodhaBot\\\\journaling\\\\logs\" -name \"*2026-03-24*\" -type f 2>/dev/null | head -5)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && sed -i 's/min_rr_ratio: 1.8/min_rr_ratio: 1.5/' config/config.yaml && grep \"min_rr\" config/config.yaml)",
+      "Bash(cd C:/Users/nithi/zerodhaBot && sed -i 's/MIN_RR = 1.8/MIN_RR = 1.5/' strategies/ema_pullback.py && sed -i 's/MIN_ATR_PCT = 0.5/MIN_ATR_PCT = 0.8/' research/stock_screener.py && grep \"MIN_RR\\\\|MIN_ATR\" strategies/ema_pullback.py research/stock_screener.py)"
     ]
   }
 }

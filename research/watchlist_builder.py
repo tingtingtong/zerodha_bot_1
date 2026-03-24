@@ -62,10 +62,8 @@ class WatchlistBuilder:
         regime = self.regime_detector.detect(nifty_daily, vix=vix)
         logger.info(f"Regime: {regime.regime.value} | Rec: {regime.recommendation} | VIX: {vix:.1f}")
 
-        if regime.recommendation == "stay_flat":
-            self._last_watchlist = []
-            self._last_refresh = datetime.now(IST)
-            return regime, []
+        # Always build watchlist — mean_reversion strategy needs candidates even in bear/sideways
+        # regime_bullish flag is passed per-strategy so each strategy decides for itself
 
         from_date = datetime.now(IST) - timedelta(days=90)
         to_date = datetime.now(IST)

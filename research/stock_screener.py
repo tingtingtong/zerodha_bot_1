@@ -43,7 +43,7 @@ class StockScreener:
     MIN_PRICE = 50.0
     MAX_PRICE = 10_000.0
     MIN_DATA_DAYS = 60
-    MIN_ATR_PCT = 0.5
+    MIN_ATR_PCT = 0.8
     MAX_ATR_PCT = 5.0
     PREFERRED_TURNOVER = 20_00_00_000
     PREFERRED_MAX_ATR = 3.0

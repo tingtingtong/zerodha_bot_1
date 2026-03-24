@@ -11,7 +11,7 @@ class EMAPullbackStrategy(BaseStrategy):
     EMA_FAST = 9
     EMA_SLOW = 21
     MIN_VOL_MULT = 1.2
-    MIN_RR = 1.8
+    MIN_RR = 1.5
     MAX_HOLD_CANDLES = 16
     NO_TRADE_BEFORE = "09:45"
     NO_TRADE_AFTER = "14:45"
