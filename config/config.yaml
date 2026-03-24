@@ -61,9 +61,9 @@ market_research:
   max_price: 10000
   min_atr_pct: 0.5
   max_atr_pct: 5.0
-  vix_reduce_threshold: 18.0
-  vix_halt_threshold: 20.0
-  vix_kill_threshold: 30.0
+  vix_reduce_threshold: 22.0
+  vix_halt_threshold: 28.0
+  vix_kill_threshold: 35.0
   nifty_fall_halt_pct: -1.5
   nifty_fall_kill_pct: -2.5
   watchlist_refresh_times_ist:

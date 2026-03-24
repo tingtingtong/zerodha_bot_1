@@ -34,8 +34,8 @@ class RegimeResult:
 
 class MarketRegimeDetector:
 
-    VIX_HALT = 20.0
-    VIX_EXTREME = 30.0
+    VIX_HALT = 28.0
+    VIX_EXTREME = 35.0
     BREADTH_BULL = 60.0
     BREADTH_BEAR = 40.0
     ADX_TRENDING = 25.0
@@ -84,7 +84,8 @@ class MarketRegimeDetector:
         elif not above_200 and not above_50 and slope < self.EMA_SLOPE_BEAR:
             regime = MarketRegime.STRONG_BEAR if (adx > self.ADX_TRENDING and breadth_pct < self.BREADTH_BEAR) else MarketRegime.WEAK_BEAR
             conf = 0.82 if regime == MarketRegime.STRONG_BEAR else 0.62
-            rec = "stay_flat"
+            # STRONG_BEAR = stay flat; WEAK_BEAR = allow cautious longs if VIX permits
+            rec = "stay_flat" if regime == MarketRegime.STRONG_BEAR else "trade_long"
         else:
             regime, conf, rec = MarketRegime.SIDEWAYS, 0.70, "stay_flat"
 
