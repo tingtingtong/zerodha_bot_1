@@ -2,7 +2,7 @@ Set-Location "C:\Users\nithi\zerodhaBot"
 $DATE = Get-Date -Format "yyyy-MM-dd"
 $PYTHON = "C:\Users\nithi\AppData\Local\Programs\Python\Python312\python.exe"
 $LOG = "C:\Users\nithi\zerodhaBot\journaling\logs\scheduler_$DATE.log"
-$BOT_MODE = "paper"
+$BOT_MODE = "live"
 
 "[$(Get-Date)] Starting ZerodhaBot (mode: $BOT_MODE)..." | Out-File -Append $LOG
 

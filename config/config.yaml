@@ -1,7 +1,7 @@
 bot:
   name: "ZerodhaBot"
   version: "1.0.0"
-  mode: "paper"                    # paper | semi_auto | live
+  mode: "live"                     # paper | semi_auto | live
   timezone: "Asia/Kolkata"
   log_level: "INFO"
   log_dir: "journaling/logs"
@@ -74,7 +74,7 @@ market_research:
   avoid_event_within_days: 3
 
 data:
-  provider_mode: "free_only"       # free_only | zerodha | zerodha_with_fallback
+  provider_mode: "zerodha_with_fallback"  # free_only | zerodha | zerodha_with_fallback
   cache_dir: ".cache/market_data"
   cache_expiry_minutes: 15
   historical_lookback_days: 365
