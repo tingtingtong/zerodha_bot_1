@@ -55,10 +55,10 @@ TelegramNotifier().send('🚨 <b>ZerodhaBot auto-login FAILED</b>\nBot did not s
     exit 1
 }
 
-# Step 3: Start WhatsApp commander in background
-"[$(Get-Date)] Starting WhatsApp commander..." | Out-File -Append $LOG
+# Step 3: Start Telegram commander in background
+"[$(Get-Date)] Starting Telegram commander..." | Out-File -Append $LOG
 $commander = Start-Process -FilePath $PYTHON `
-    -ArgumentList "C:\Users\nithi\zerodhaBot\utils\whatsapp_commander.py" `
+    -ArgumentList "C:\Users\nithi\zerodhaBot\utils\telegram_commander.py" `
     -WorkingDirectory "C:\Users\nithi\zerodhaBot" `
     -PassThru -WindowStyle Hidden
 "[$(Get-Date)] Commander PID: $($commander.Id)" | Out-File -Append $LOG
@@ -69,5 +69,5 @@ $commander = Start-Process -FilePath $PYTHON `
 "[$(Get-Date)] Bot session ended." | Out-File -Append $LOG
 
 # Step 5: Stop commander when bot exits
-"[$(Get-Date)] Stopping WhatsApp commander..." | Out-File -Append $LOG
+"[$(Get-Date)] Stopping Telegram commander..." | Out-File -Append $LOG
 Stop-Process -Id $commander.Id -Force -ErrorAction SilentlyContinue
