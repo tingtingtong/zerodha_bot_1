@@ -7,7 +7,7 @@ bot:
   log_dir: "journaling/logs"
 
 account:
-  starting_capital: 10000
+  starting_capital: 5000
   currency: "INR"
   persist_state_to: "journaling/account_state.json"
 
@@ -74,7 +74,7 @@ market_research:
   avoid_event_within_days: 3
 
 data:
-  provider_mode: "zerodha_with_fallback"  # free_only | zerodha | zerodha_with_fallback
+  provider_mode: "free_only"              # free_only | zerodha | zerodha_with_fallback
   cache_dir: ".cache/market_data"
   cache_expiry_minutes: 15
   historical_lookback_days: 365

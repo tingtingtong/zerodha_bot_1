@@ -137,6 +137,14 @@ def main():
 
     broker = build_broker(config, mode)
     data = build_data_registry(config)
+
+    # In live mode, use actual broker margin as the capital base
+    if mode == "live":
+        live_margin = broker.get_available_margin()
+        if live_margin > 0:
+            account_value = live_margin
+            logger.info(f"Live mode: using actual Zerodha margin ₹{account_value:,.2f}")
+
     risk = RiskEngine(account_value, config.get("risk", {}))
     order_mgr = OrderManager(broker, risk)
     watchlist_builder = WatchlistBuilder()
