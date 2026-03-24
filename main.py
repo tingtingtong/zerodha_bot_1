@@ -265,6 +265,8 @@ def main():
     force_exit_time = config["strategy"].get("force_exit_ist", "15:15")
     last_status_slot = -1
     hourly_steps = []  # accumulates steps each 15 mins, resets on new slot
+    _data_failures: dict = {}  # sym -> (fail_count, last_fail_time)
+    _last_data_time = time.time()
 
     # ── Main trading loop ─────────────────────────────────────────
     logger.info("Entering main trading loop...")
@@ -289,7 +291,7 @@ def main():
             nifty_chg_pct=nifty_now.get("change_pct", 0),
             vix=vix,
             api_errors=0,
-            data_stale_min=0,
+            data_stale_min=int((time.time() - _last_data_time) / 60),
         )
         if kill or risk.kill_switch_active:
             reason = kill_reason if kill else "risk_engine_kill"
@@ -316,11 +318,27 @@ def main():
         for candidate in active_candidates:
             sym = candidate.symbol
 
+            active_symbols = {t.symbol for t in order_mgr.active_trades.values()}
+            if sym in active_symbols:
+                continue
+
+            fc, lt = _data_failures.get(sym, (0, 0))
+            if fc >= 3 and time.time() - lt < 300:  # 5 min cooldown
+                continue
+
             try:
                 df_15m = data.get_historical(sym, "15m", from_dt, now)
                 df_daily = data.get_historical(sym, "1d", now - timedelta(days=120), now)
+                _last_data_time = time.time()
             except Exception as e:
-                logger.warning(f"Data fetch failed {sym}: {e}")
+                now_ts = time.time()
+                fc, lt = _data_failures.get(sym, (0, 0))
+                _data_failures[sym] = (fc + 1, now_ts)
+                if fc + 1 >= 3:
+                    logger.warning(f"Data fetch failed {sym} ({fc+1}x): {e} — skipping for 5 min")
+                else:
+                    logger.warning(f"Data fetch failed {sym}: {e}")
+                audit.log_error("data_fetch", sym, {"error": str(e), "fail_count": fc + 1})
                 continue
 
             charges_est = estimate_round_trip_charges(

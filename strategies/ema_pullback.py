@@ -55,7 +55,8 @@ class EMAPullbackStrategy(BaseStrategy):
         if cur <= ema9[-1] or cur <= ema21[-1]:
             return self._no_trade(symbol, "price_below_ema")
 
-        pullback = any(l[-i] <= ema9[-i] * 1.003 for i in range(2, 5) if i < len(l))
+        # Pullback: low touched EMA9 in last 5 candles AND current price is above EMA9 (bounce confirmed)
+        pullback = (cur > ema9[-1]) and any(l[-i] <= ema9[-i] * 1.005 for i in range(2, 6) if i < len(l))
         if not pullback:
             return self._no_trade(symbol, "no_pullback")
 

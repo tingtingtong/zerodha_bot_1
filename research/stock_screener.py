@@ -47,6 +47,7 @@ class StockScreener:
     MAX_ATR_PCT = 5.0
     PREFERRED_TURNOVER = 20_00_00_000
     PREFERRED_MAX_ATR = 3.0
+    DEFAULT_MIN_SCORE = 65  # Raised from 60 to be more selective; used by callers as default threshold
 
     W_LIQ, W_MOM, W_TREND, W_VOL, W_VSPIKE = 30, 25, 25, 10, 10
 

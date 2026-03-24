@@ -85,6 +85,14 @@ class BaseStrategy(ABC):
         if len(c) < n + 1:
             return 50.0
         d = np.diff(c)
-        ag = float(np.mean(np.where(d > 0, d, 0.0)[-n:]))
-        al = float(np.mean(np.where(d < 0, -d, 0.0)[-n:]))
-        return 100.0 if al == 0 else 100 - (100 / (1 + ag / al))
+        gains = np.where(d > 0, d, 0.0)
+        losses = np.where(d < 0, -d, 0.0)
+        # Seed with simple average of first n
+        avg_gain = float(np.mean(gains[:n]))
+        avg_loss = float(np.mean(losses[:n]))
+        # Wilder's smoothing for remaining bars
+        for i in range(n, len(gains)):
+            avg_gain = (avg_gain * (n - 1) + gains[i]) / n
+            avg_loss = (avg_loss * (n - 1) + losses[i]) / n
+        rsi = 100 - 100 / (1 + avg_gain / max(avg_loss, 1e-9))
+        return rsi

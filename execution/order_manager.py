@@ -1,6 +1,8 @@
+import json
 import logging
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List
 import pytz
 
@@ -22,7 +24,27 @@ class OrderManager:
         self.risk = risk_engine
         self.active_trades: Dict[str, TradeRecord] = {}
         self.completed_trades: List[TradeRecord] = []
-        self._placed_keys: set = set()
+        self._placed_keys_file = Path("journaling") / "placed_keys.json"
+        self._placed_keys: set = self._load_placed_keys()
+
+    def _load_placed_keys(self) -> set:
+        try:
+            if self._placed_keys_file.exists():
+                data = json.loads(self._placed_keys_file.read_text())
+                # Only use today's keys
+                today = datetime.now().strftime("%Y-%m-%d")
+                return set(data.get(today, []))
+        except Exception:
+            pass
+        return set()
+
+    def _save_placed_keys(self):
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            self._placed_keys_file.parent.mkdir(parents=True, exist_ok=True)
+            self._placed_keys_file.write_text(json.dumps({today: list(self._placed_keys)}, indent=2))
+        except Exception:
+            pass
 
     def execute_entry(self, trade: TradeRecord, current_price: float) -> bool:
         key = f"{trade.symbol}_{trade.entry_price}_{trade.entry_qty}"
@@ -30,6 +52,7 @@ class OrderManager:
             logger.warning(f"Duplicate entry blocked: {trade.symbol}")
             return False
         self._placed_keys.add(key)
+        self._save_placed_keys()
 
         limit_price = round(current_price * 1.002, 2)
         req = OrderRequest(
@@ -184,9 +207,8 @@ class OrderManager:
             trade.candles_held += 1
 
             # Time-based exit
-            if trade.candles_held >= trade.target_1 / trade.entry_price * 16:
-                pass  # handled below with explicit candle check
-            if trade.candles_held >= 16:
+            max_hold = getattr(trade, 'max_hold_candles', 16)
+            if trade.candles_held >= max_hold:
                 self.close_trade(tid, current_price, "time_exit")
                 continue
 
@@ -201,6 +223,8 @@ class OrderManager:
                                             TradeState.BREAKEVEN_MOVED,
                                             TradeState.TRAILING_ACTIVE)):
                 half = max(1, trade.entry_qty // 2)
+                if half >= trade.entry_qty:
+                    half = trade.entry_qty  # exit full position if qty too small to split
                 self.partial_exit(tid, half, current_price, "target_1_hit")
                 trade.state = TradeState.TARGET_1_HIT
                 continue

@@ -66,11 +66,13 @@ class ETFMomentumStrategy(BaseStrategy):
         if qty < 1:
             return self._no_trade(symbol, "insufficient_capital")
 
-        net_rr = (qty * (t1 - cur) - charges_estimate) / max(qty * rps, 0.01)
+        net_rr = (qty * (t2 - cur) - charges_estimate) / max(qty * rps, 0.01)
         if net_rr < self.MIN_RR:
             return self._no_trade(symbol, f"rr_{net_rr:.2f}_below_{self.MIN_RR}")
 
-        quality = "A" if rsi > 55 and cur > ema20[-1] else "B"
+        avg_vol = float(np.mean(v[-20:-1])) if len(v) > 20 else float(np.mean(v))
+        volume_spike = float(v[-1]) / max(avg_vol, 1)
+        quality = "A" if (rsi > 60 and cur > ema20[-1] and volume_spike >= 1.5) else "B"
         return TradeSetup(
             signal=Signal.LONG, symbol=symbol,
             entry_price=round(cur, 2), stop_loss=round(sl, 2),

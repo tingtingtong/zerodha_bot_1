@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
@@ -5,6 +6,7 @@ from typing import Optional, List
 import pytz
 import uuid
 
+logger = logging.getLogger(__name__)
 IST = pytz.timezone("Asia/Kolkata")
 
 
@@ -22,6 +24,29 @@ class TradeState(Enum):
     CLOSED_TIME = "closed_time"
     CLOSED_EMERGENCY = "closed_emergency"
     ERROR = "error"
+
+
+VALID_TRANSITIONS = {
+    TradeState.SIGNAL_GENERATED: {TradeState.RISK_APPROVED, TradeState.ENTRY_ORDERED, TradeState.ERROR},
+    TradeState.RISK_APPROVED: {TradeState.ENTRY_ORDERED, TradeState.ERROR},
+    TradeState.ENTRY_ORDERED: {TradeState.ENTRY_FILLED, TradeState.ERROR},
+    TradeState.ENTRY_FILLED: {TradeState.SL_PLACED, TradeState.CLOSED_LOSS, TradeState.CLOSED_PROFIT,
+                               TradeState.CLOSED_TIME, TradeState.CLOSED_EMERGENCY},
+    TradeState.SL_PLACED: {TradeState.TARGET_1_HIT, TradeState.CLOSED_LOSS, TradeState.CLOSED_PROFIT,
+                            TradeState.BREAKEVEN_MOVED, TradeState.CLOSED_TIME, TradeState.CLOSED_EMERGENCY,
+                            TradeState.TRAILING_ACTIVE},
+    TradeState.TARGET_1_HIT: {TradeState.BREAKEVEN_MOVED, TradeState.CLOSED_PROFIT, TradeState.CLOSED_LOSS,
+                               TradeState.CLOSED_TIME, TradeState.CLOSED_EMERGENCY, TradeState.TRAILING_ACTIVE},
+    TradeState.BREAKEVEN_MOVED: {TradeState.TRAILING_ACTIVE, TradeState.CLOSED_PROFIT, TradeState.CLOSED_LOSS,
+                                  TradeState.CLOSED_TIME, TradeState.CLOSED_EMERGENCY},
+    TradeState.TRAILING_ACTIVE: {TradeState.CLOSED_PROFIT, TradeState.CLOSED_LOSS,
+                                  TradeState.CLOSED_TIME, TradeState.CLOSED_EMERGENCY},
+    TradeState.CLOSED_PROFIT: set(),
+    TradeState.CLOSED_LOSS: set(),
+    TradeState.CLOSED_TIME: set(),
+    TradeState.CLOSED_EMERGENCY: set(),
+    TradeState.ERROR: set(),
+}
 
 
 @dataclass
@@ -73,6 +98,10 @@ class TradeRecord:
         self._log_state(self.state)
 
     def transition(self, new_state: TradeState, **kwargs):
+        allowed = VALID_TRANSITIONS.get(self.state, set())
+        if new_state not in allowed:
+            logger.warning(f"[{self.symbol}] Invalid transition {self.state.value} -> {new_state.value}, ignoring")
+            return f"{self.state.value} → {new_state.value} (BLOCKED)"
         old = self.state
         self.state = new_state
         for k, v in kwargs.items():

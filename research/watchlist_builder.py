@@ -81,8 +81,6 @@ class WatchlistBuilder:
                 logger.debug(f"ETF {sym}: {e}")
 
         for sym in NIFTY_200[:universe_size]:
-            if sym in event_set:
-                continue
             try:
                 df = data_registry.get_historical(sym, "1d", from_date, to_date)
                 s = self.screener.score(sym, df, upcoming_event=(sym in event_set))

@@ -121,11 +121,12 @@ class RiskEngine:
             return RiskCheckResult(RiskDecision.REJECTED,
                                    f"trade_too_small_{qty*entry_price:.0f}")
 
+        # Use adjusted qty (after size_mult and caps) for effective RR check
         net_reward = qty * (rps * 2.5) - charges_estimate
         net_rr = net_reward / max(qty * rps, 0.01)
         if net_rr < self.min_rr:
             return RiskCheckResult(RiskDecision.REJECTED,
-                                   f"rr_{net_rr:.2f}_below_{self.min_rr}")
+                                   f"rr_{net_rr:.2f}_below_{self.min_rr}_qty{qty}")
 
         return RiskCheckResult(
             decision=RiskDecision.APPROVED, reason="all_checks_passed",
@@ -145,8 +146,8 @@ class RiskEngine:
             self.consecutive_losses += 1
             self.last_loss_time = datetime.now(IST)
             logger.warning(f"LOSS  {symbol}: ₹{pnl:.2f} | consec={self.consecutive_losses} | day=₹{self.daily_pnl:.2f}")
-        else:
-            self.consecutive_losses = 0
+        elif pnl >= 0:
+            self.consecutive_losses = 0  # reset on any win or breakeven
             logger.info(f"WIN   {symbol}: ₹{pnl:.2f} | day=₹{self.daily_pnl:.2f}")
 
         if self.daily_pnl < 0 and abs(self.daily_pnl) >= self.sizer.max_daily_loss():

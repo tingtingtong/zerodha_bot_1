@@ -68,12 +68,17 @@ CAPITAL_TIERS = [
 ]
 
 
-def get_tier(account_value: float) -> CapitalTier:
+def get_tier(account_value: float, current_tier_name: str = None) -> CapitalTier:
     for tier in CAPITAL_TIERS:
         if tier.min_capital <= account_value <= tier.max_capital:
-            return tier
+            # Hysteresis: if currently in this tier, stay unless clearly past boundary
+            if current_tier_name and current_tier_name == tier.name:
+                return tier
+            # Add 2% buffer to prevent boundary oscillation
+            if account_value >= tier.min_capital * 1.02:
+                return tier
     if account_value < CAPITAL_TIERS[0].min_capital:
-        logger.warning(f"Capital ₹{account_value:,.0f} below minimum tier. Using Nano.")
+        logger.debug(f"Capital 20b9{account_value:,.0f} below Nano minimum. Using Nano tier.")
         return CAPITAL_TIERS[0]
     return CAPITAL_TIERS[-1]
 

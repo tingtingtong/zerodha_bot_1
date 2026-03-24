@@ -1,5 +1,6 @@
 import json
 import logging
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -43,13 +44,15 @@ class TradeJournal:
         fp = Path(path)
         fp.parent.mkdir(parents=True, exist_ok=True)
         open_trades = self.load_open_trades()
-        with open(fp, "w") as f:
+        tmp = fp.with_suffix('.tmp')
+        with open(tmp, "w") as f:
             json.dump({
                 "account_value": round(account_value, 2),
                 "daily_pnl": round(daily_pnl, 2),
                 "last_updated": datetime.now(IST).isoformat(),
                 "open_symbols": [t["symbol"] for t in open_trades],
             }, f, indent=2)
+        tmp.replace(fp)  # atomic on same filesystem
 
     def load_account_state(self, path: str = "journaling/account_state.json",
                            default: float = 20000.0) -> float:
