@@ -83,7 +83,9 @@ class ZerodhaExecutionAdapter(BrokerBase):
 
     def get_available_margin(self) -> float:
         try:
-            return float(self.kite.margins("equity").get("available", {}).get("cash", 0))
+            m = self.kite.margins("equity")
+            # Use net (total funds including intraday top-up) not just cash
+            return float(m.get("net", 0) or m.get("available", {}).get("live_balance", 0))
         except Exception:
             return 0.0
 

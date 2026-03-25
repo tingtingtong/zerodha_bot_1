@@ -350,8 +350,16 @@ def handle(text: str):
 
 def run():
     logger.info("Telegram Commander started. Listening for commands...")
-    send("🤖 <b>ZerodhaBot Commander online.</b>\nSend /help for available commands.")
+
+    # Drain any messages that arrived while the bot was offline — don't replay them
     offset = 0
+    stale = get_updates(offset)
+    if stale:
+        offset = stale[-1]["update_id"] + 1
+        logger.info(f"Drained {len(stale)} stale updates (offset now {offset})")
+
+    send("🤖 <b>ZerodhaBot Commander online.</b>\nSend /help for available commands.")
+
     while True:
         updates = get_updates(offset)
         for upd in updates:
@@ -360,9 +368,9 @@ def run():
             chat_id = str(msg.get("chat", {}).get("id", ""))
             text = msg.get("text", "")
             if chat_id != CHAT_ID:
-                continue  # ignore messages from other users
-            if text.startswith("/"):
-                logger.info(f"Command received: {text}")
+                continue
+            if text:
+                logger.info(f"Message received: {text}")
                 handle(text)
         time.sleep(1)
 
