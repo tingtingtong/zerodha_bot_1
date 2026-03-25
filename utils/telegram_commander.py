@@ -172,70 +172,154 @@ def get_status() -> str:
     )
 
 
-def get_report() -> str:
-    today = datetime.now(IST).strftime("%Y-%m-%d")
+def _format_report(r: dict, label: str) -> str:
+    trades_line = (
+        f"Trades : {r.get('trades', 0)}  W:{r.get('wins', 0)}  L:{r.get('losses', 0)}\n"
+        f"Gross  : Rs.{r.get('gross_profit', 0):+.2f} / Rs.{r.get('gross_loss', 0):+.2f}\n"
+        f"Charges: Rs.{r.get('total_charges', 0):.2f}\n"
+    ) if r.get('trades', 0) > 0 else "Trades : 0 — Stay flat day\n"
+    return (
+        f"📋 <b>{label}</b>\n"
+        f"——————————————————\n"
+        f"{trades_line}"
+        f"Net P&amp;L: Rs.{r.get('net_pnl', 0):+.2f}\n"
+        f"Account: Rs.{r.get('account_value', 0):,.0f}\n"
+        f"Regime : {r.get('regime', 'N/A').upper()}  |  VIX: {r.get('vix', 0):.1f}"
+    )
+
+
+def _load_report(date_str: str):
+    """Load a report JSON for a given YYYY-MM-DD date. Returns dict or None."""
+    f = ROOT / "journaling" / "reports" / f"report_{date_str}.json"
+    if f.exists():
+        try:
+            return json.loads(f.read_text())
+        except Exception:
+            return None
+    return None
+
+
+def get_report(date_arg: str = "") -> str:
     reports_dir = ROOT / "journaling" / "reports"
-    report_file = reports_dir / f"report_{today}.json"
+    today = datetime.now(IST).strftime("%Y-%m-%d")
 
-    # If today's report doesn't exist, find the most recent one
-    label = "TODAY'S REPORT"
-    if not report_file.exists():
-        reports = sorted(reports_dir.glob("report_*.json"), reverse=True) if reports_dir.exists() else []
-        if reports:
-            report_file = reports[0]
-            date_str = report_file.stem.replace("report_", "")
-            label = f"LAST REPORT ({date_str})"
-        else:
-            # No reports at all — show live account state
-            account_file = ROOT / "journaling" / "account_state.json"
-            account_val = "N/A"
-            daily_pnl = "N/A"
-            if account_file.exists():
-                try:
-                    d = json.loads(account_file.read_text())
-                    account_val = f"Rs.{d.get('account_value', 0):,.0f}"
-                    daily_pnl   = f"Rs.{d.get('daily_pnl', 0):+.2f}"
-                except Exception:
-                    pass
-            return (
-                f"📋 <b>NO REPORTS YET</b>\n"
-                f"——————————————————\n"
-                f"Bot hasn't completed a trading day yet.\n"
-                f"Account : {account_val}\n"
-                f"Day P&amp;L: {daily_pnl}\n"
-                f"Time    : {datetime.now(IST).strftime('%I:%M %p IST')}"
-            )
+    # /report YYYY-MM-DD — specific date
+    if date_arg:
+        r = _load_report(date_arg)
+        if r:
+            return _format_report(r, f"REPORT ({date_arg})")
+        return f"📋 No report found for {date_arg}."
 
-    try:
-        r = json.loads(report_file.read_text())
-        trades_line = (
-            f"Trades : {r.get('trades', 0)}  W:{r.get('wins', 0)}  L:{r.get('losses', 0)}\n"
-            f"Gross  : Rs.{r.get('gross_profit', 0):+.2f} / Rs.{r.get('gross_loss', 0):+.2f}\n"
-            f"Charges: Rs.{r.get('total_charges', 0):.2f}\n"
-        ) if r.get('trades', 0) > 0 else "Trades : 0 — Stay flat day\n"
+    # /report — today, fallback to most recent
+    r = _load_report(today)
+    if r:
+        return _format_report(r, "TODAY'S REPORT")
 
-        return (
-            f"📋 <b>{label}</b>\n"
-            f"——————————————————\n"
-            f"{trades_line}"
-            f"Net P&amp;L: Rs.{r.get('net_pnl', 0):+.2f}\n"
-            f"Account: Rs.{r.get('account_value', 0):,.0f}\n"
-            f"Regime : {r.get('regime', 'N/A').upper()}  |  VIX: {r.get('vix', 0):.1f}"
-        )
-    except Exception as e:
-        return f"📋 Could not read report: {e}"
+    reports = sorted(reports_dir.glob("report_*.json"), reverse=True) if reports_dir.exists() else []
+    if reports:
+        date_str = reports[0].stem.replace("report_", "")
+        r = _load_report(date_str)
+        if r:
+            return _format_report(r, f"LAST REPORT ({date_str})")
+
+    # No reports at all
+    account_file = ROOT / "journaling" / "account_state.json"
+    account_val, daily_pnl = "N/A", "N/A"
+    if account_file.exists():
+        try:
+            d = json.loads(account_file.read_text())
+            account_val = f"Rs.{d.get('account_value', 0):,.0f}"
+            daily_pnl   = f"Rs.{d.get('daily_pnl', 0):+.2f}"
+        except Exception:
+            pass
+    return (
+        f"📋 <b>NO REPORTS YET</b>\n"
+        f"——————————————————\n"
+        f"Bot hasn't completed a trading day yet.\n"
+        f"Account : {account_val}\n"
+        f"Day P&amp;L: {daily_pnl}\n"
+        f"Time    : {datetime.now(IST).strftime('%I:%M %p IST')}"
+    )
+
+
+def get_report_summary(days: list) -> str:
+    """Aggregate multiple days of reports into one summary."""
+    reports_dir = ROOT / "journaling" / "reports"
+    if not reports_dir.exists():
+        return "📋 No reports available."
+
+    total_trades = wins = losses = 0
+    total_net_pnl = total_charges = 0.0
+    days_traded = 0
+    found_dates = []
+
+    for date_str in days:
+        r = _load_report(date_str)
+        if not r:
+            continue
+        found_dates.append(date_str)
+        days_traded += 1
+        total_trades += r.get("trades", 0)
+        wins         += r.get("wins", 0)
+        losses       += r.get("losses", 0)
+        total_net_pnl   += r.get("net_pnl", 0)
+        total_charges   += r.get("total_charges", 0)
+
+    if not found_dates:
+        return "📋 No reports found for the requested period."
+
+    win_rate = round(wins / total_trades * 100) if total_trades else 0
+    return (
+        f"📊 <b>SUMMARY ({found_dates[-1]} → {found_dates[0]})</b>\n"
+        f"——————————————————\n"
+        f"Days    : {days_traded}\n"
+        f"Trades  : {total_trades}  W:{wins}  L:{losses}  ({win_rate}%)\n"
+        f"Charges : Rs.{total_charges:.2f}\n"
+        f"Net P&amp;L: Rs.{total_net_pnl:+.2f}"
+    )
+
+
+def get_last_week_report() -> str:
+    from datetime import timedelta
+    today = datetime.now(IST).date()
+    # Mon–Fri of last calendar week
+    days_back = today.weekday() + 7  # go back to last Monday
+    last_mon = today - timedelta(days=days_back)
+    dates = [
+        (last_mon + timedelta(days=i)).strftime("%Y-%m-%d")
+        for i in range(5)  # Mon to Fri
+    ]
+    return get_report_summary(dates)
+
+
+def get_last_month_report() -> str:
+    from datetime import timedelta
+    today = datetime.now(IST).date()
+    first_of_this_month = today.replace(day=1)
+    last_day_prev = first_of_this_month - timedelta(days=1)
+    first_day_prev = last_day_prev.replace(day=1)
+    dates = []
+    d = first_day_prev
+    while d <= last_day_prev:
+        if d.weekday() < 5:  # Mon–Fri only
+            dates.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+    return get_report_summary(dates)
 
 
 HELP_TEXT = (
     "🤖 <b>ZerodhaBot Commands</b>\n"
     "——————————————————\n"
-    "/status    — bot status + account\n"
-    "/start     — start bot in LIVE mode\n"
-    "/runLive   — start bot in LIVE mode\n"
-    "/runPaper  — start bot in PAPER mode\n"
-    "/stop      — stop the bot\n"
-    "/report    — today's P&amp;L report\n"
-    "/help      — this message\n"
+    "/status              — bot status + account\n"
+    "/start               — start bot in LIVE mode\n"
+    "/runLive             — start bot in LIVE mode\n"
+    "/runPaper            — start bot in PAPER mode\n"
+    "/stop                — stop the bot\n"
+    "/report              — today's (or last) report\n"
+    "/report 2026-03-25   — report for a specific date\n"
+    "/lastweek            — last week's summary\n"
+    "/lastmonth           — last month's summary\n"
+    "/help                — this message\n"
     "——————————————————\n"
     "💬 Or just <b>type anything</b> to ask Claude about the bot!"
 )
@@ -343,7 +427,13 @@ def handle(text: str):
             msg = stop_bot()
             send(f"{'✅' if 'stopped' in msg else '⚠️'} {msg}")
         elif cmd == "/report":
-            send(get_report())
+            parts = text.strip().split()
+            date_arg = parts[1] if len(parts) > 1 else ""
+            send(get_report(date_arg))
+        elif cmd == "/lastweek":
+            send(get_last_week_report())
+        elif cmd == "/lastmonth":
+            send(get_last_month_report())
         elif cmd == "/help":
             send(HELP_TEXT)
         else:
