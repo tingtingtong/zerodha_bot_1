@@ -21,6 +21,9 @@ class SimulatedBroker(BrokerBase):
         self.capital = initial_capital
         self.positions: Dict[str, Position] = {}
         self.orders: Dict[str, OrderResponse] = {}
+        # Pending SL/SL-M orders waiting for price to hit trigger
+        # { oid: (OrderRequest, trigger_price, seg) }
+        self._pending_sl: Dict[str, tuple] = {}
         self.trade_log: List[dict] = []
         self.total_charges = 0.0
         self.total_gross_pnl = 0.0
@@ -33,10 +36,25 @@ class SimulatedBroker(BrokerBase):
         oid = f"SIM_{uuid.uuid4().hex[:8].upper()}"
         if order.quantity <= 0:
             return self._rejected(oid, "invalid_quantity")
+
+        seg = Segment.EQUITY_DELIVERY if order.product == ProductType.CNC else Segment.EQUITY_INTRADAY
+
+        # SL / SL-LIMIT orders: store as pending, do NOT fill immediately
+        if order.order_type in (OrderType.SL, OrderType.SL_LIMIT):
+            trigger = order.trigger_price or order.price or 0.0
+            if trigger <= 0:
+                return self._rejected(oid, "no_trigger_price")
+            resp = OrderResponse(oid, OrderStatus.OPEN, order.quantity, 0.0,
+                                 datetime.now(IST), "pending_sl", True)
+            self.orders[oid] = resp
+            self._pending_sl[oid] = (order, trigger, seg)
+            logger.info(f"[PAPER SL  ] {order.quantity} {order.symbol} trigger@₹{trigger:.2f} — pending")
+            return resp
+
         fp = self._fill_price(order)
         if fp <= 0:
             return self._rejected(oid, "no_price")
-        seg = Segment.EQUITY_DELIVERY if order.product == ProductType.CNC else Segment.EQUITY_INTRADAY
+
         if order.side == OrderSide.BUY:
             return self._buy(order, oid, fp, seg)
         return self._sell(order, oid, fp, seg)
@@ -118,6 +136,7 @@ class SimulatedBroker(BrokerBase):
         return resp
 
     def cancel_order(self, oid: str) -> bool:
+        self._pending_sl.pop(oid, None)
         if oid in self.orders:
             self.orders[oid].status = OrderStatus.CANCELLED
             return True
@@ -138,7 +157,22 @@ class SimulatedBroker(BrokerBase):
             p.current_price = price
             p.unrealized_pnl = (price - p.avg_price) * p.qty
 
+        # Check if any pending SL for this symbol should trigger
+        for oid, (order, trigger, seg) in list(self._pending_sl.items()):
+            if order.symbol != symbol:
+                continue
+            if order.side == OrderSide.SELL and price <= trigger:
+                # Trigger hit — fill the SL order at trigger price (with slippage)
+                fill_price = round(trigger * (1 - SLIPPAGE_PCT / 100), 2)
+                resp = self._sell(order, oid, fill_price, seg)
+                if resp.status == OrderStatus.COMPLETE:
+                    self.orders[oid] = resp
+                    del self._pending_sl[oid]
+                    logger.info(f"[PAPER SL HIT] {order.symbol} trigger@₹{trigger:.2f} filled@₹{fill_price:.2f}")
+
     def exit_all_positions(self) -> List[OrderResponse]:
+        # Cancel all pending SLs first
+        self._pending_sl.clear()
         responses = []
         for sym, pos in list(self.positions.items()):
             req = OrderRequest(sym, OrderSide.SELL, pos.qty, OrderType.MARKET,

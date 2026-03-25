@@ -89,18 +89,21 @@ def is_bot_running() -> bool:
         return False
 
 
-def start_bot() -> str:
+def start_bot(mode: str = "live") -> str:
+    if mode not in ("live", "semi_auto", "paper"):
+        return f"Unknown mode: {mode}. Use live, semi_auto, or paper."
     if is_bot_running():
-        return "Bot is already running."
+        return "Bot is already running. Send /stop first."
     try:
         proc = subprocess.Popen(
-            [PYTHON, str(ROOT / "main.py"), "--mode", "paper"],
+            [PYTHON, str(ROOT / "main.py"), "--mode", mode],
             cwd=str(ROOT),
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
         BOT_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
         BOT_PID_FILE.write_text(str(proc.pid))
-        return f"Bot started (PID {proc.pid})."
+        mode_label = {"live": "🔴 LIVE", "semi_auto": "🟡 SEMI-AUTO", "paper": "📄 PAPER"}[mode]
+        return f"Bot started in {mode_label} mode (PID {proc.pid})."
     except Exception as e:
         return f"Failed to start bot: {e}"
 
@@ -226,11 +229,13 @@ def get_report() -> str:
 HELP_TEXT = (
     "🤖 <b>ZerodhaBot Commands</b>\n"
     "——————————————————\n"
-    "/status  — bot running status + account\n"
-    "/start   — start the bot\n"
-    "/stop    — stop the bot\n"
-    "/report  — today's P&amp;L report\n"
-    "/help    — this message\n"
+    "/status    — bot status + account\n"
+    "/start     — start bot in LIVE mode\n"
+    "/runLive   — start bot in LIVE mode\n"
+    "/runPaper  — start bot in PAPER mode\n"
+    "/stop      — stop the bot\n"
+    "/report    — today's P&amp;L report\n"
+    "/help      — this message\n"
     "——————————————————\n"
     "💬 Or just <b>type anything</b> to ask Claude about the bot!"
 )
@@ -242,9 +247,10 @@ AGENT_SYSTEM_PROMPT = """You are an AI assistant embedded in ZerodhaBot, an auto
 You have full access to the bot's codebase at C:/Users/nithi/zerodhaBot. You can read files, edit code, run scripts, and make real improvements — exactly like Claude Code CLI.
 
 Key facts:
-- Paper mode, Rs.5,000 capital, Nano tier (1% risk/trade, max 2 positions, 3 trades/day)
+- Live mode, Rs.10,000 capital, risk managed by capital tier (config/capital_tiers.py)
 - Strategies: EMA pullback (strategies/ema_pullback.py), ETF momentum (strategies/etf_momentum.py)
 - Kill switches: VIX >= 20 halts, VIX >= 30 kills all; NIFTY fall >= -1.5% halts, >= -2.5% kills
+- /start and /runLive start real trades; /runPaper starts paper simulation
 - Auto-starts Mon-Fri 8:55 AM IST via Windows Task Scheduler
 - Config: config/config.yaml | Logs: journaling/logs/ | Reports: journaling/reports/
 
@@ -327,8 +333,11 @@ def handle(text: str):
         cmd = text.strip().lower().split()[0]
         if cmd == "/status":
             send(get_status())
-        elif cmd == "/start":
-            msg = start_bot()
+        elif cmd in ("/start", "/runlive"):
+            msg = start_bot("live")
+            send(f"{'✅' if 'started' in msg else '⚠️'} {msg}")
+        elif cmd == "/runpaper":
+            msg = start_bot("paper")
             send(f"{'✅' if 'started' in msg else '⚠️'} {msg}")
         elif cmd == "/stop":
             msg = stop_bot()

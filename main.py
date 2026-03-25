@@ -97,7 +97,7 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
-    mode = args.mode or config["bot"].get("mode", "paper")
+    mode = args.mode or config["bot"].get("mode", "live")
     config["bot"]["mode"] = mode
 
     logger = setup_logging(
@@ -272,6 +272,7 @@ def main():
             time.sleep(60)
         return
 
+    regime_bullish = regime.regime.value in ("strong_bull", "weak_bull")
     rejected_trades = []
     force_exit_time = config["strategy"].get("force_exit_ist", "15:15")
     last_status_slot = -1
@@ -338,7 +339,7 @@ def main():
         etf_symbols = config["market_research"].get("etf_symbols", [])
         active_symbols_set = {t.symbol for t in order_mgr.active_trades.values()}
         etf_candidates = [
-            type("C", (), {"symbol": s, "price": 0})()
+            type("C", (), {"symbol": s, "price": 0, "score": 1.0})()
             for s in etf_symbols if s not in active_symbols_set
         ]
         all_candidates = list(active_candidates) + etf_candidates

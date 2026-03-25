@@ -55,7 +55,7 @@ class TradeJournal:
         tmp.replace(fp)  # atomic on same filesystem
 
     def load_account_state(self, path: str = "journaling/account_state.json",
-                           default: float = 20000.0) -> float:
+                           default: float = 10000.0) -> float:
         try:
             with open(path) as f:
                 return float(json.load(f).get("account_value", default))
