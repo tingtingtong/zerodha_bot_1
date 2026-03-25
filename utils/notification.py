@@ -78,7 +78,9 @@ class TelegramNotifier:
         if steps:
             steps_lines = "\n<b>What the bot did this hour:</b>\n"
             for s in steps:
-                steps_lines += f"  {s}\n"
+                # Escape & in stock symbols like M&M to avoid breaking HTML
+                safe = s.replace("&", "&amp;")
+                steps_lines += f"  {safe}\n"
 
         self.send(
             f"🕐 <b>HOURLY STATUS — {hour}</b>\n"

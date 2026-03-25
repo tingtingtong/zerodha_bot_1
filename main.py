@@ -128,7 +128,7 @@ def main():
     from research.watchlist_builder import WatchlistBuilder
     from research.event_calendar import EventCalendar
     from strategies.strategy_registry import get_active_strategies
-    from utils.time_utils import is_trading_day, is_market_open, now_ist, minutes_to_close
+    from utils.time_utils import is_trading_day, is_market_open, now_ist, minutes_to_close, MARKET_OPEN
     from utils.notification import TelegramNotifier
     from utils.charge_calculator import estimate_round_trip_charges, Segment
     from journaling.audit_logger import AuditLogger
@@ -212,6 +212,9 @@ def main():
         while True:
             now = now_ist()
             if not is_market_open():
+                if now.time() < MARKET_OPEN:
+                    time.sleep(30)
+                    continue
                 logger.info("Market closed. Exiting stay-flat monitor.")
                 # Save account state + EOD report on stay_flat days
                 journal.save_account_state(account_value, 0.0)
@@ -284,6 +287,14 @@ def main():
 
         # Market closed?
         if not is_market_open():
+            # Before market open — wait instead of running EOD
+            if now.time() < MARKET_OPEN:
+                wait_secs = max(10, (
+                    now.replace(hour=9, minute=15, second=0, microsecond=0) - now
+                ).total_seconds())
+                logger.info(f"Pre-market: waiting {wait_secs/60:.1f} min for market open at 09:15...")
+                time.sleep(min(wait_secs, 60))
+                continue
             logger.info("Market closed. Running EOD tasks.")
             break
 
@@ -356,11 +367,15 @@ def main():
             )
 
             for strategy in strategies:
+                # regime_bullish = True only for genuinely bullish regimes
+                # weak_bear with trade_long is NOT bullish — mean reversion should fire there
+                from research.market_regime import MarketRegime
+                regime_bullish = regime.regime in (MarketRegime.STRONG_BULL, MarketRegime.WEAK_BULL)
                 setup = strategy.generate_signal(
                     symbol=sym,
                     df_primary=df_15m,
                     df_daily=df_daily,
-                    regime_bullish=(regime.recommendation == "trade_long"),
+                    regime_bullish=regime_bullish,
                     capital_per_trade=risk.sizer.max_per_trade(),
                     charges_estimate=charges_est,
                 )
