@@ -27,19 +27,15 @@ class EMAPullbackStrategy(BaseStrategy):
     def generate_signal(self, symbol, df_primary, df_daily,
                         regime_bullish, capital_per_trade, charges_estimate) -> TradeSetup:
 
-        if not regime_bullish:
-            return self._no_trade(symbol, "regime_not_bullish")
+        # No regime gate — EMA pullback scans all days; price/RSI/volume conditions decide
         if df_primary is None or len(df_primary) < 30:
             return self._no_trade(symbol, "insufficient_15m_data")
 
-        ts = df_primary.iloc[-1].get("timestamp")
-        if ts is not None:
-            try:
-                ts_str = pd.Timestamp(ts).strftime("%H:%M")
-                if ts_str < self.NO_TRADE_BEFORE or ts_str > self.NO_TRADE_AFTER:
-                    return self._no_trade(symbol, f"outside_window_{ts_str}")
-            except Exception:
-                pass
+        # Use current IST time for window check, not candle timestamp (yfinance can return stale times)
+        import pytz
+        now_str = pd.Timestamp.now(tz=pytz.timezone("Asia/Kolkata")).strftime("%H:%M")
+        if now_str < self.NO_TRADE_BEFORE or now_str > self.NO_TRADE_AFTER:
+            return self._no_trade(symbol, f"outside_window_{now_str}")
 
         c = df_primary["close"].values
         h = df_primary["high"].values

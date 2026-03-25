@@ -24,7 +24,7 @@ class MeanReversionStrategy(BaseStrategy):
 
     MIN_RR = 1.3          # Lower bar — moves are counter-trend, shorter
     MAX_HOLD_CANDLES = 8  # 2 hours max — get in, get out
-    RSI_OVERSOLD = 38     # Entry only when oversold
+    RSI_OVERSOLD = 45     # Entry only when oversold
     RSI_MAX = 50          # Don't enter if already recovered too much
     VOLUME_MIN = 1.3      # Need some volume to confirm bounce
 
@@ -39,9 +39,7 @@ class MeanReversionStrategy(BaseStrategy):
     def generate_signal(self, symbol, df_primary, df_daily,
                         regime_bullish, capital_per_trade, charges_estimate) -> TradeSetup:
 
-        # Only active in non-bullish regimes — EMA pullback handles bull markets
-        if regime_bullish:
-            return self._no_trade(symbol, "regime_bullish_use_ema_pullback")
+        # No regime gate — mean reversion fires whenever RSI is oversold regardless of regime
         if df_primary is None or len(df_primary) < 30:
             return self._no_trade(symbol, "insufficient_data")
         if df_daily is None or len(df_daily) < 22:

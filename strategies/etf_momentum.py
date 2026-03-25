@@ -25,8 +25,7 @@ class ETFMomentumStrategy(BaseStrategy):
 
         if symbol not in ETF_SYMBOLS:
             return self._no_trade(symbol, "not_an_etf_symbol")
-        if not regime_bullish:
-            return self._no_trade(symbol, "regime_not_bullish")
+        # No regime gate — ETF conditions (above 50 EMA, momentum) decide
         if df_primary is None or len(df_primary) < 25:
             return self._no_trade(symbol, "insufficient_data")
         if df_daily is None or len(df_daily) < 55:

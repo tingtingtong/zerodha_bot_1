@@ -334,11 +334,19 @@ def main():
         active_candidates = watchlist_builder.active_candidates
         from_dt = now - timedelta(days=config["data"].get("intraday_lookback_days", 3))
 
-        for candidate in active_candidates:
+        # Always include ETF symbols for ETFMomentum strategy
+        etf_symbols = config["market_research"].get("etf_symbols", [])
+        active_symbols_set = {t.symbol for t in order_mgr.active_trades.values()}
+        etf_candidates = [
+            type("C", (), {"symbol": s, "price": 0})()
+            for s in etf_symbols if s not in active_symbols_set
+        ]
+        all_candidates = list(active_candidates) + etf_candidates
+
+        for candidate in all_candidates:
             sym = candidate.symbol
 
-            active_symbols = {t.symbol for t in order_mgr.active_trades.values()}
-            if sym in active_symbols:
+            if sym in {t.symbol for t in order_mgr.active_trades.values()}:
                 continue
 
             fc, lt = _data_failures.get(sym, (0, 0))
@@ -367,10 +375,6 @@ def main():
             )
 
             for strategy in strategies:
-                # regime_bullish = True only for genuinely bullish regimes
-                # weak_bear with trade_long is NOT bullish — mean reversion should fire there
-                from research.market_regime import MarketRegime
-                regime_bullish = regime.regime in (MarketRegime.STRONG_BULL, MarketRegime.WEAK_BULL)
                 setup = strategy.generate_signal(
                     symbol=sym,
                     df_primary=df_15m,
