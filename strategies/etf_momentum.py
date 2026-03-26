@@ -53,7 +53,9 @@ class ETFMomentumStrategy(BaseStrategy):
             return self._no_trade(symbol, f"rsi_out_of_range_{rsi:.1f}")
 
         atr = self._atr(h, l, c, 14)
-        sl = ema20[-1] - atr * 0.8
+        vp = self._vol_profile(symbol, df_daily)
+        vol_regime = vp.regime if vp else "normal"
+        sl = self._dynamic_sl(cur, ema20[-1], atr, vol_regime)
         rps = cur - sl
         if rps <= 0.01:
             return self._no_trade(symbol, "invalid_sl")
@@ -78,7 +80,7 @@ class ETFMomentumStrategy(BaseStrategy):
             target_1=round(t1, 2), target_2=round(t2, 2),
             breakeven_trigger=round(be, 2), trailing_step=round(atr * 0.4, 2),
             risk_amount=round(qty * rps, 2), reward_risk_ratio=round(net_rr, 2),
-            setup_quality=quality, reason=f"etf_ema20_bounce_rsi{rsi:.0f}",
+            setup_quality=quality, reason=f"etf_ema20_bounce_rsi{rsi:.0f}_sl_{vol_regime}",
             max_hold_candles=self.MAX_HOLD_CANDLES,
             strategy_name=self.strategy_name, is_valid=True,
         )

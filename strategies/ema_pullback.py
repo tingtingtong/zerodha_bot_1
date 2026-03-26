@@ -66,7 +66,9 @@ class EMAPullbackStrategy(BaseStrategy):
 
         atr = self._atr(h, l, c, 14)
         pullback_low = float(np.min(l[-4:-1]))
-        sl = max(pullback_low - atr * 0.3, cur - atr * 1.5)
+        vp = self._vol_profile(symbol, df_daily)
+        vol_regime = vp.regime if vp else "normal"
+        sl = self._dynamic_sl(cur, pullback_low, atr, vol_regime)
         rps = cur - sl
 
         if rps <= 0.01:
@@ -98,7 +100,7 @@ class EMAPullbackStrategy(BaseStrategy):
             breakeven_trigger=round(be, 2), trailing_step=round(atr * 0.5, 2),
             risk_amount=round(qty * rps, 2), reward_risk_ratio=round(net_rr, 2),
             setup_quality=quality,
-            reason=f"ema_pullback_rsi{rsi:.0f}_vol{vspike:.1f}x",
+            reason=f"ema_pullback_rsi{rsi:.0f}_vol{vspike:.1f}x_sl_{vol_regime}",
             max_hold_candles=self.MAX_HOLD_CANDLES,
             strategy_name=self.strategy_name, is_valid=True,
         )

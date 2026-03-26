@@ -83,7 +83,9 @@ class MeanReversionStrategy(BaseStrategy):
         # ── Sizing ─────────────────────────────────────────────────────
         atr = self._atr(h, l, c, 14)
         swing_low = float(np.min(l[-5:]))  # recent swing low
-        sl = min(swing_low - atr * 0.3, cur - atr * 1.5)
+        vp = self._vol_profile(symbol, df_daily)
+        vol_regime = vp.regime if vp else "normal"
+        sl = self._dynamic_sl(cur, swing_low, atr, vol_regime)
         rps = cur - sl
         if rps <= 0.01:
             return self._no_trade(symbol, "invalid_sl")
@@ -110,7 +112,7 @@ class MeanReversionStrategy(BaseStrategy):
             breakeven_trigger=round(be, 2), trailing_step=round(atr * 0.3, 2),
             risk_amount=round(qty * rps, 2), reward_risk_ratio=round(net_rr, 2),
             setup_quality=quality,
-            reason=f"mean_rev_rsi{rsi:.0f}_vol{volume_spike:.1f}x",
+            reason=f"mean_rev_rsi{rsi:.0f}_vol{volume_spike:.1f}x_sl_{vol_regime}",
             max_hold_candles=self.MAX_HOLD_CANDLES,
             strategy_name=self.strategy_name, is_valid=True,
         )

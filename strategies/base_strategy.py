@@ -87,12 +87,41 @@ class BaseStrategy(ABC):
         d = np.diff(c)
         gains = np.where(d > 0, d, 0.0)
         losses = np.where(d < 0, -d, 0.0)
-        # Seed with simple average of first n
         avg_gain = float(np.mean(gains[:n]))
         avg_loss = float(np.mean(losses[:n]))
-        # Wilder's smoothing for remaining bars
         for i in range(n, len(gains)):
             avg_gain = (avg_gain * (n - 1) + gains[i]) / n
             avg_loss = (avg_loss * (n - 1) + losses[i]) / n
         rsi = 100 - 100 / (1 + avg_gain / max(avg_loss, 1e-9))
         return rsi
+
+    # ── Volatility-adjusted SL helpers ───────────────────────────────
+
+    # ATR multipliers per volatility regime
+    _VOL_SL_MULT = {"low": 1.0, "normal": 1.2, "elevated": 1.5, "extreme": 1.8}
+
+    def _vol_profile(self, symbol: str, df_daily: pd.DataFrame):
+        """Return VolatilityProfile from daily data, or None if insufficient data."""
+        try:
+            from research.volatility_engine import VolatilityEngine
+            return VolatilityEngine().profile(symbol, df_daily)
+        except Exception:
+            return None
+
+    def _dynamic_sl(self, cur: float, anchor: float, atr: float,
+                    vol_regime: str = "normal") -> float:
+        """Compute SL using volatility-regime-adjusted ATR multiplier.
+
+        anchor   — structural price level (pullback low, swing low, EMA, etc.)
+        atr      — 14-period ATR on the intraday frame
+        vol_regime — 'low' / 'normal' / 'elevated' / 'extreme'
+
+        Returns the tighter of:
+          (a) anchor minus a small ATR buffer  — structure-based SL
+          (b) cur minus multiplier * ATR       — volatility-based SL cap
+        """
+        mult = self._VOL_SL_MULT.get(vol_regime, 1.2)
+        structure_sl = anchor - atr * 0.3
+        volatility_sl = cur - atr * mult
+        # Use the less aggressive (higher price = tighter risk) of the two
+        return max(structure_sl, volatility_sl)

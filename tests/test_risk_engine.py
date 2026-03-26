@@ -74,8 +74,9 @@ def test_market_kill_switch_api_errors(engine):
 
 
 def test_market_kill_switch_stale_data(engine):
+    # Threshold raised to 30 min to allow pre-market watchlist build time
     kill, reason = engine.check_market_kill_switch(
-        nifty_chg_pct=0, vix=15, api_errors=0, data_stale_min=6)
+        nifty_chg_pct=0, vix=15, api_errors=0, data_stale_min=31)
     assert kill
 
 

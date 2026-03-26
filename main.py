@@ -184,6 +184,22 @@ def main():
     except Exception:
         vix = 15.0
 
+    # ── Load NSE corporate actions into event calendar ─────────────
+    try:
+        from research.nse_corporate_actions import load_into_calendar
+        ca_summary = load_into_calendar(
+            event_cal,
+            lookahead_days=config["market_research"].get("avoid_event_within_days", 7),
+        )
+        if ca_summary["symbols"]:
+            logger.info(
+                f"Corporate actions: {ca_summary['ex_dates']} ex-dates, "
+                f"{ca_summary['board_meetings']} results — "
+                f"blocking: {ca_summary['symbols']}"
+            )
+    except Exception as e:
+        logger.warning(f"NSE corporate actions fetch failed (non-critical): {e}")
+
     event_symbols = event_cal.get_event_symbols_today(
         within_days=config["market_research"].get("avoid_event_within_days", 3)
     )
