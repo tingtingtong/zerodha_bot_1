@@ -15,18 +15,28 @@ class TelegramNotifier:
         if not self._enabled:
             logger.debug(f"[NOTIFY disabled] {message[:80]}")
             return False
-        try:
-            import requests
-            url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-            resp = requests.post(
-                url, json={"chat_id": self.chat_id, "text": message, "parse_mode": "HTML"},
-                timeout=5,
-            )
-            resp.raise_for_status()
-            return True
-        except Exception as e:
-            logger.warning(f"Telegram send failed: {e}")
-            return False
+        import requests
+        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+        # Truncate to Telegram's 4096-char limit
+        if len(message) > 4000:
+            message = message[:3990] + "\n…(truncated)"
+        for parse_mode in ("HTML", None):
+            try:
+                payload = {"chat_id": self.chat_id, "text": message}
+                if parse_mode:
+                    payload["parse_mode"] = parse_mode
+                resp = requests.post(url, json=payload, timeout=8)
+                resp.raise_for_status()
+                return True
+            except Exception as e:
+                if parse_mode == "HTML":
+                    # Strip HTML tags and retry as plain text
+                    import re
+                    message = re.sub(r"<[^>]+>", "", message).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                    logger.debug(f"HTML send failed, retrying as plain text: {e}")
+                else:
+                    logger.warning(f"Telegram send failed: {e}")
+        return False
 
     def send_trade_entry(self, symbol, qty, entry, sl, t1, t2, quality):
         self.send(
@@ -76,10 +86,20 @@ class TelegramNotifier:
 
         steps_lines = ""
         if steps:
-            steps_lines = "\n<b>What the bot did this hour:</b>\n"
-            for s in steps:
-                # Escape & in stock symbols like M&M to avoid breaking HTML
-                safe = s.replace("&", "&amp;")
+            # Deduplicate while preserving order, keep last 10 unique events
+            seen = set()
+            unique_steps = []
+            for s in reversed(steps):
+                key = s[:60]
+                if key not in seen:
+                    seen.add(key)
+                    unique_steps.append(s)
+                if len(unique_steps) >= 10:
+                    break
+            unique_steps.reverse()
+            steps_lines = "\n<b>Activity this period:</b>\n"
+            for s in unique_steps:
+                safe = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 steps_lines += f"  {safe}\n"
 
         self.send(
