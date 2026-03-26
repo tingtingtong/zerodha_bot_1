@@ -198,6 +198,52 @@ def main():
     audit.log_regime(regime.regime.value, vix, regime.recommendation)
     logger.info(f"Regime: {regime.regime.value} | VIX: {vix} | Watchlist: {[w.symbol for w in watchlist[:5]]}")
 
+    # ── Send pre-market brief to Telegram ─────────────────────────
+    if config["notifications"]["enabled"]:
+        from config.capital_tiers import get_tier_summary
+        from utils.time_utils import next_trading_day
+        tier = get_tier_summary(risk.account_value)
+
+        # Assess blockers and trade probability
+        blockers = []
+        if vix >= 20:
+            blockers.append(f"VIX {vix:.1f} — elevated, cautious sizing")
+        if vix >= 25:
+            blockers.append(f"VIX {vix:.1f} >= 25 — new trades halted per risk rules")
+        if regime.recommendation == "stay_flat":
+            blockers.append("Regime: STAY FLAT — no new trades today")
+        if risk.kill_switch_active:
+            blockers.append("Kill switch active")
+        if tier["max_risk_per_trade_inr"] < 150:
+            blockers.append(f"Capital Rs.{risk.account_value:,.0f} — tight stop needed (<Rs.{tier['max_risk_per_trade_inr']:.0f} risk/trade)")
+
+        # Probability logic
+        if regime.recommendation == "stay_flat" or risk.kill_switch_active:
+            probability = "Low"
+        elif vix >= 25 and regime.regime.value in ("weak_bear", "strong_bear"):
+            probability = "Low"
+        elif regime.regime.value in ("strong_bull", "weak_bull") and vix < 20:
+            probability = "High"
+        elif len(watchlist) >= 5 and vix < 25:
+            probability = "Medium"
+        else:
+            probability = "Low"
+
+        active_strategies = [s.replace("_", " ").title() for s in config["strategy"].get("active", [])]
+        notifier.send_premarket_brief(
+            regime=regime.regime.value,
+            vix=vix,
+            account_value=risk.account_value,
+            tier_name=tier["tier_name"],
+            max_risk_inr=tier["max_risk_per_trade_inr"],
+            max_trades=tier["max_trades_per_day"],
+            watchlist=[w.symbol for w in watchlist[:5]],
+            strategies=active_strategies,
+            blockers=blockers,
+            trade_probability=probability,
+            next_trading_day=next_trading_day(),
+        )
+
     if regime.recommendation == "stay_flat":
         logger.info("Regime: STAY FLAT today. Bot will monitor but not trade.")
         if config["notifications"]["enabled"]:
