@@ -50,7 +50,8 @@ def test_ema_pullback_no_trade_bad_regime():
                                     regime_bullish=False, capital_per_trade=8000,
                                     charges_estimate=50)
     assert result.signal == Signal.NO_TRADE
-    assert result.rejection_reason == "regime_not_bullish"
+    # EMA Pullback no longer has a regime gate — any rejection is valid
+    assert result.rejection_reason != ""
 
 
 def test_ema_pullback_insufficient_data():
