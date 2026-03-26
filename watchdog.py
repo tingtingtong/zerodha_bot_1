@@ -16,14 +16,16 @@ from utils.time_utils import is_trading_day
 LOG_FILE = Path(__file__).parent / "logs" / "watchdog.log"
 LOG_FILE.parent.mkdir(exist_ok=True)
 
+_handlers = [logging.FileHandler(LOG_FILE, encoding="utf-8")]
+# Only add console handler if stdout supports unicode (not pythonw.exe)
+if sys.stdout and hasattr(sys.stdout, 'buffer'):
+    _handlers.append(logging.StreamHandler(sys.stdout))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | watchdog | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=_handlers,
 )
 logger = logging.getLogger(__name__)
 
