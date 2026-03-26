@@ -10,6 +10,8 @@ import logging
 from datetime import datetime, date
 from pathlib import Path
 import pytz
+sys.path.insert(0, str(Path(__file__).parent))
+from utils.time_utils import is_trading_day
 
 LOG_FILE = Path(__file__).parent / "logs" / "watchdog.log"
 LOG_FILE.parent.mkdir(exist_ok=True)
@@ -72,13 +74,10 @@ def main():
     while True:
         now = now_ist()
 
-        if not is_weekday(now):
-            wait = seconds_until(START_HOUR, START_MIN)
-            # Jump to next Monday if weekend
-            days_to_mon = (7 - now.weekday()) % 7 or 7
-            wait = wait + (days_to_mon - 1) * 86400 if now.weekday() >= 5 else wait
-            logger.info(f"Weekend — sleeping until next weekday ~{wait/3600:.1f}h")
-            time.sleep(min(wait, 3600))
+        if not is_trading_day(now.date()):
+            reason = "Weekend" if not is_weekday(now) else "Market holiday"
+            logger.info(f"{reason} ({now.strftime('%Y-%m-%d %A')}) — sleeping 1h")
+            time.sleep(3600)
             continue
 
         market_started = now.hour * 60 + now.minute >= START_HOUR * 60 + START_MIN

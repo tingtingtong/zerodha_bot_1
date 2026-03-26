@@ -22,6 +22,23 @@ NSE_HOLIDAYS = {
     date(2025, 5, 1), date(2025, 8, 15), date(2025, 8, 27),
     date(2025, 10, 2), date(2025, 10, 21), date(2025, 10, 22),
     date(2025, 11, 5), date(2025, 12, 25),
+    # 2026 — source: NSE official holiday list
+    date(2026, 1, 26),   # Republic Day
+    date(2026, 2, 17),   # Mahashivratri
+    date(2026, 3, 20),   # Holi (Dhuleti)
+    date(2026, 3, 26),   # Ram Navami  ← TODAY
+    date(2026, 4, 3),    # Good Friday
+    date(2026, 4, 10),   # Dr. Ambedkar Jayanti / Mahavir Jayanti
+    date(2026, 4, 14),   # Dr. Ambedkar Jayanti
+    date(2026, 5, 1),    # Maharashtra Day / Labour Day
+    date(2026, 7, 6),    # Bakri Id (Eid ul-Adha)
+    date(2026, 8, 17),   # Independence Day (Aug 15 falls on weekend, observed Mon)
+    date(2026, 9, 17),   # Milad-un-Nabi / Id-E-Milad
+    date(2026, 10, 2),   # Gandhi Jayanti / Dussehra
+    date(2026, 10, 21),  # Diwali Laxmi Puja (muhurat trading only)
+    date(2026, 11, 4),   # Diwali Balipratipada
+    date(2026, 11, 25),  # Gurunanak Jayanti
+    date(2026, 12, 25),  # Christmas
 }
 
 
