@@ -278,7 +278,7 @@ def main():
     last_status_slot = -1
     hourly_steps = []  # accumulates steps each 15 mins, resets on new slot
     _data_failures: dict = {}  # sym -> (fail_count, last_fail_time)
-    _last_data_time = time.time()
+    _last_data_time = time.time()  # pre-market watchlist build counts as fresh data
 
     # ── Main trading loop ─────────────────────────────────────────
     logger.info("Entering main trading loop...")

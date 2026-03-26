@@ -51,8 +51,6 @@ class OrderManager:
         if key in self._placed_keys:
             logger.warning(f"Duplicate entry blocked: {trade.symbol}")
             return False
-        self._placed_keys.add(key)
-        self._save_placed_keys()
 
         limit_price = round(current_price * 1.002, 2)
         req = OrderRequest(
@@ -63,48 +61,53 @@ class OrderManager:
         )
         trade.transition(TradeState.ENTRY_ORDERED)
 
-        for attempt in range(self.MAX_RETRIES):
-            resp = self.broker.place_order(req)
+        # Place order ONCE — no retry loop (prevents duplicate orders on exchange)
+        resp = self.broker.place_order(req)
 
-            if resp.status == OrderStatus.COMPLETE:
-                trade.transition(
-                    TradeState.ENTRY_FILLED,
-                    entry_order_id=resp.order_id,
-                    entry_price=resp.avg_fill_price,
-                    entry_time=datetime.now(IST),
-                )
-                self.active_trades[trade.trade_id] = trade
-                self.risk.open_positions_count += 1
-                logger.info(f"Entry filled: {trade.symbol} @₹{resp.avg_fill_price:.2f} x{trade.entry_qty}")
-                self._place_sl(trade)
-                return True
+        if resp.status == OrderStatus.REJECTED:
+            logger.error(f"Entry rejected {trade.symbol}: {resp.message}")
+            trade.transition(TradeState.ERROR, error_message=resp.message)
+            return False
 
-            if resp.status == OrderStatus.REJECTED:
-                logger.error(f"Entry rejected {trade.symbol}: {resp.message}")
-                trade.transition(TradeState.ERROR, error_message=resp.message)
-                return False
+        if resp.status == OrderStatus.COMPLETE:
+            self._placed_keys.add(key)
+            self._save_placed_keys()
+            self._on_entry_filled(trade, resp.order_id, resp.avg_fill_price)
+            return True
 
-            time.sleep(8)
-            status = self.broker.get_order_status(resp.order_id)
+        # Order is OPEN/PENDING — poll for fill up to ORDER_WAIT_SEC
+        order_id = resp.order_id
+        deadline = time.time() + self.ORDER_WAIT_SEC
+        while time.time() < deadline:
+            time.sleep(5)
+            status = self.broker.get_order_status(order_id)
             if status.status == OrderStatus.COMPLETE:
-                trade.transition(
-                    TradeState.ENTRY_FILLED,
-                    entry_order_id=resp.order_id,
-                    entry_price=status.avg_fill_price,
-                    entry_time=datetime.now(IST),
-                )
-                self.active_trades[trade.trade_id] = trade
-                self.risk.open_positions_count += 1
-                self._place_sl(trade)
+                self._placed_keys.add(key)
+                self._save_placed_keys()
+                self._on_entry_filled(trade, order_id, status.avg_fill_price)
                 return True
-
-            if attempt == self.MAX_RETRIES - 1:
-                self.broker.cancel_order(resp.order_id)
-                logger.warning(f"Entry stale — cancelled: {trade.symbol}")
-                trade.transition(TradeState.ERROR, error_message="entry_stale_cancelled")
+            if status.status == OrderStatus.REJECTED:
+                logger.error(f"Entry rejected after polling {trade.symbol}: {status.message}")
+                trade.transition(TradeState.ERROR, error_message=status.message)
                 return False
 
+        # Order did not fill within wait window — cancel it (do NOT save placed_key)
+        self.broker.cancel_order(order_id)
+        logger.warning(f"Entry unfilled after {self.ORDER_WAIT_SEC}s — cancelled: {trade.symbol}")
+        trade.transition(TradeState.ERROR, error_message="entry_timeout_cancelled")
         return False
+
+    def _on_entry_filled(self, trade: TradeRecord, order_id: str, fill_price: float):
+        trade.transition(
+            TradeState.ENTRY_FILLED,
+            entry_order_id=order_id,
+            entry_price=fill_price,
+            entry_time=datetime.now(IST),
+        )
+        self.active_trades[trade.trade_id] = trade
+        self.risk.open_positions_count += 1
+        logger.info(f"Entry filled: {trade.symbol} @Rs.{fill_price:.2f} x{trade.entry_qty}")
+        self._place_sl(trade)
 
     def _place_sl(self, trade: TradeRecord):
         req = OrderRequest(

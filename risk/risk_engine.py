@@ -162,7 +162,7 @@ class RiskEngine:
             return True, f"nifty_circuit_{nifty_chg_pct:.1f}pct"
         if api_errors >= 3:
             return True, f"api_errors_{api_errors}"
-        if data_stale_min > 5:
+        if data_stale_min > 30:  # 30 min threshold — pre-market phase can be stale
             return True, f"data_stale_{data_stale_min}min"
         return False, "ok"
 
