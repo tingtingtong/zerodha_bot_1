@@ -52,7 +52,10 @@ class OrderManager:
             logger.warning(f"Duplicate entry blocked: {trade.symbol}")
             return False
 
-        limit_price = round(current_price * 1.002, 2)
+        # Round to NSE tick size of 0.05 (most equities use 0.05; some use 0.10)
+        # Round to nearest 0.05 to satisfy both — never sends sub-tick prices
+        raw = current_price * 1.002
+        limit_price = round(round(raw / 0.05) * 0.05, 2)
         req = OrderRequest(
             symbol=trade.symbol, side=OrderSide.BUY,
             quantity=trade.entry_qty, order_type=OrderType.LIMIT,
@@ -114,8 +117,8 @@ class OrderManager:
             symbol=trade.symbol, side=OrderSide.SELL,
             quantity=trade.remaining_qty, order_type=OrderType.SL,
             product=ProductType.MIS,
-            price=round(trade.stop_loss * 0.995, 2),
-            trigger_price=round(trade.stop_loss, 2),
+            price=round(round(trade.stop_loss * 0.995 / 0.05) * 0.05, 2),
+            trigger_price=round(round(trade.stop_loss / 0.05) * 0.05, 2),
             tag=f"SL_{trade.trade_id[:8]}",
         )
         resp = self.broker.place_order(req)
@@ -143,7 +146,7 @@ class OrderManager:
         req = OrderRequest(
             symbol=trade.symbol, side=OrderSide.SELL, quantity=qty,
             order_type=OrderType.LIMIT, product=ProductType.MIS,
-            price=round(exit_price * 0.999, 2), tag=f"P_{trade.trade_id[:8]}",
+            price=round(round(exit_price * 0.999 / 0.05) * 0.05, 2), tag=f"P_{trade.trade_id[:8]}",
         )
         resp = self.broker.place_order(req)
         if resp.status == OrderStatus.COMPLETE:
