@@ -44,15 +44,18 @@ class TradeJournal:
         fp = Path(path)
         fp.parent.mkdir(parents=True, exist_ok=True)
         open_trades = self.load_open_trades()
-        tmp = fp.with_suffix('.tmp')
-        with open(tmp, "w") as f:
-            json.dump({
-                "account_value": round(account_value, 2),
-                "daily_pnl": round(daily_pnl, 2),
-                "last_updated": datetime.now(IST).isoformat(),
-                "open_symbols": [t["symbol"] for t in open_trades],
-            }, f, indent=2)
-        tmp.replace(fp)  # atomic on same filesystem
+        data = json.dumps({
+            "account_value": round(account_value, 2),
+            "daily_pnl": round(daily_pnl, 2),
+            "last_updated": datetime.now(IST).isoformat(),
+            "open_symbols": [t["symbol"] for t in open_trades],
+        }, indent=2)
+        # Write directly — Windows locks .tmp files across processes
+        try:
+            with open(fp, "w") as f:
+                f.write(data)
+        except PermissionError:
+            pass  # another instance writing simultaneously — skip, not critical
 
     def load_account_state(self, path: str = "journaling/account_state.json",
                            default: float = 10000.0) -> float:

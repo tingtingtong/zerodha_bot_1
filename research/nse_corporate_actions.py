@@ -78,6 +78,9 @@ def fetch_ex_dates(from_date: date, to_date: date,
     try:
         resp = session.get(url, timeout=10)
         resp.raise_for_status()
+        if "application/json" not in resp.headers.get("Content-Type", ""):
+            logger.warning(f"NSE ex-dates: unexpected content-type {resp.headers.get('Content-Type')} — skipping")
+            return []
         data = resp.json()
         results = []
         for row in data:
@@ -116,6 +119,9 @@ def fetch_board_meetings(from_date: date, to_date: date,
     try:
         resp = session.get(url, timeout=10)
         resp.raise_for_status()
+        if "application/json" not in resp.headers.get("Content-Type", ""):
+            logger.warning(f"NSE board meetings: unexpected content-type {resp.headers.get('Content-Type')} — skipping")
+            return []
         data = resp.json()
         results = []
         for row in data:
