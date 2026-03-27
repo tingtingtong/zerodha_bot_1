@@ -100,6 +100,11 @@ class OrderManager:
         return False
 
     def _on_entry_filled(self, trade: TradeRecord, order_id: str, fill_price: float):
+        # If fill price is below the signal price, SL may now be above fill — fix it
+        if trade.stop_loss >= fill_price:
+            adjusted = round(fill_price * 0.99, 2)  # 1% below fill as fallback
+            logger.warning(f"SL {trade.stop_loss} >= fill {fill_price} — adjusting to {adjusted}")
+            trade.stop_loss = adjusted
         trade.transition(
             TradeState.ENTRY_FILLED,
             entry_order_id=order_id,

@@ -123,5 +123,7 @@ class BaseStrategy(ABC):
         mult = self._VOL_SL_MULT.get(vol_regime, 1.2)
         structure_sl = anchor - atr * 0.3
         volatility_sl = cur - atr * mult
-        # Use the less aggressive (higher price = tighter risk) of the two
-        return max(structure_sl, volatility_sl)
+        sl = max(structure_sl, volatility_sl)
+        # Hard cap: SL must always be below current price by at least 0.5x ATR
+        # Prevents cases where anchor (pullback_low) is above cur due to fast drops
+        return min(sl, cur - atr * 0.5)

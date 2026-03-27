@@ -582,7 +582,17 @@ def main():
     if config["notifications"]["enabled"]:
         notifier.send_daily_summary(report)
 
-    journal.save_account_state(risk.account_value, risk.daily_pnl)
+    # Sync final account value from broker (live mode) so saved state matches Zerodha
+    final_value = risk.account_value
+    if mode == "live":
+        try:
+            live_margin = broker.get_available_margin()
+            if live_margin > 0:
+                final_value = live_margin
+                logger.info(f"EOD account sync from Zerodha: Rs.{final_value:,.2f}")
+        except Exception:
+            pass
+    journal.save_account_state(final_value, risk.daily_pnl)
     risk.reset_daily()
     pid_file = ROOT / "journaling" / "bot.pid"
     pid_file.unlink(missing_ok=True)
