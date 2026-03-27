@@ -23,11 +23,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import anthropic
-import anyio
 import pytz
 import requests
-from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage, AssistantMessage, TextBlock
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -375,39 +372,30 @@ def build_bot_context() -> str:
     return "\n".join(lines)
 
 
-async def _run_agent(prompt: str) -> str:
-    """Run Claude agent with file access tools and return the result."""
-    full_prompt = f"{build_bot_context()}\n\nUser request: {prompt}"
-    result_parts = []
-    async for message in query(
-        prompt=full_prompt,
-        options=ClaudeAgentOptions(
-            cwd=str(ROOT),
-            allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
-            permission_mode="acceptEdits",
-            system_prompt=AGENT_SYSTEM_PROMPT,
-            max_turns=20,
-        ),
-    ):
-        if isinstance(message, ResultMessage):
-            result_parts.append(message.result)
-        elif isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock) and block.text.strip():
-                    result_parts.append(block.text.strip())
-
-    return "\n".join(result_parts).strip() or "Done."
-
-
 def ask_claude(user_message: str) -> str:
-    """Route user message to Claude agent and return the response."""
-    if not os.getenv("ANTHROPIC_API_KEY", ""):
-        return "⚠️ ANTHROPIC_API_KEY not set in .env — Claude chat is not available."
+    """Answer a free-form question via claude CLI with live bot context."""
     try:
-        return anyio.run(_run_agent, user_message)
+        prompt = (
+            f"{AGENT_SYSTEM_PROMPT}\n\n"
+            f"{build_bot_context()}\n\n"
+            f"User question: {user_message}\n\n"
+            f"Reply in plain text (no markdown). Be concise — this is a Telegram message."
+        )
+        result = subprocess.run(
+            f'claude -p "{prompt.replace(chr(34), chr(39))}"',
+            capture_output=True, text=True, timeout=45,
+            cwd=str(ROOT), shell=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()[:1000]
+        err = (result.stderr or "").strip()
+        logger.warning(f"claude CLI error: {err[:120]}")
+        return f"Could not get a response right now. Try /status or /report."
+    except subprocess.TimeoutExpired:
+        return "Timed out — try again."
     except Exception as e:
-        logger.warning(f"Agent error: {e}")
-        return f"⚠️ Agent error: {str(e)[:120]}"
+        logger.warning(f"ask_claude error: {e}")
+        return f"Error: {str(e)[:100]}"
 
 
 # ── Command dispatcher ────────────────────────────────────────────────────────
@@ -475,4 +463,23 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    # Single-instance lock — exit immediately if another commander is already running
+    lock_file = ROOT / "journaling" / "commander.pid"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    if lock_file.exists():
+        try:
+            existing_pid = int(lock_file.read_text().strip())
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {existing_pid}", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True
+            )
+            if str(existing_pid) in result.stdout:
+                logger.warning(f"Commander already running (PID {existing_pid}) — exiting.")
+                sys.exit(0)
+        except Exception:
+            pass
+    lock_file.write_text(str(os.getpid()))
+    try:
+        run()
+    finally:
+        lock_file.unlink(missing_ok=True)
