@@ -31,9 +31,13 @@ logger = logging.getLogger(__name__)
 
 IST = pytz.timezone("Asia/Kolkata")
 PYTHON = sys.executable
-BOT_SCRIPT = str(Path(__file__).parent / "main.py")
+ROOT   = Path(__file__).parent
+BOT_SCRIPT       = str(ROOT / "main.py")
+COMMANDER_SCRIPT = str(ROOT / "utils" / "telegram_commander.py")
 START_HOUR, START_MIN = 9, 0    # 9:00 AM IST
 STOP_HOUR, STOP_MIN  = 15, 30  # 3:30 PM IST — stop restarting after this
+
+_commander_proc = None  # global handle so watchdog can restart it if needed
 
 
 def now_ist() -> datetime:
@@ -52,7 +56,22 @@ def seconds_until(target_h: int, target_m: int) -> float:
 
 
 def bot_log_path() -> str:
-    return str(Path(__file__).parent / "logs" / f"bot_{date.today()}.log")
+    return str(ROOT / "logs" / f"bot_{date.today()}.log")
+
+
+def ensure_commander_running():
+    """Start telegram_commander.py if it isn't already running."""
+    global _commander_proc
+    if _commander_proc is not None and _commander_proc.poll() is None:
+        return  # still alive
+    log_path = str(ROOT / "logs" / f"commander_{date.today()}.log")
+    with open(log_path, "a", encoding="utf-8") as fout:
+        _commander_proc = subprocess.Popen(
+            [PYTHON, COMMANDER_SCRIPT],
+            stdout=fout, stderr=fout,
+            cwd=str(ROOT),
+        )
+    logger.info(f"Telegram Commander started (PID {_commander_proc.pid})")
 
 
 def run_bot() -> int:
@@ -73,8 +92,10 @@ def run_bot() -> int:
 
 def main():
     logger.info("Watchdog started.")
+    ensure_commander_running()  # Start Telegram commander immediately on boot
     while True:
         now = now_ist()
+        ensure_commander_running()  # Restart if it crashed
 
         if not is_trading_day(now.date()):
             reason = "Weekend" if not is_weekday(now) else "Market holiday"
