@@ -427,8 +427,7 @@ def handle(text: str):
         else:
             send(f"Unknown command: <code>{text[:40]}</code>\nSend /help for available commands.")
     else:
-        # Free-form message — ask Claude
-        send("💭 Thinking...")
+        # Free-form message — ask Claude (single reply)
         reply = ask_claude(text)
         send(reply)
 
