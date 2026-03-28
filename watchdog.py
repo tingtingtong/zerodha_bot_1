@@ -32,12 +32,14 @@ logger = logging.getLogger(__name__)
 IST = pytz.timezone("Asia/Kolkata")
 PYTHON = sys.executable
 ROOT   = Path(__file__).parent
-BOT_SCRIPT       = str(ROOT / "main.py")
-COMMANDER_SCRIPT = str(ROOT / "utils" / "telegram_commander.py")
+BOT_SCRIPT        = str(ROOT / "main.py")
+COMMANDER_SCRIPT  = str(ROOT / "utils" / "telegram_commander.py")
+DASHBOARD_SCRIPT  = str(ROOT / "dashboard" / "app.py")
 START_HOUR, START_MIN = 9, 0    # 9:00 AM IST
 STOP_HOUR, STOP_MIN  = 15, 30  # 3:30 PM IST — stop restarting after this
 
-_commander_proc = None  # global handle so watchdog can restart it if needed
+_commander_proc  = None  # global handle so watchdog can restart it if needed
+_dashboard_proc  = None
 
 
 def now_ist() -> datetime:
@@ -74,6 +76,25 @@ def ensure_commander_running():
     logger.info(f"Telegram Commander started (PID {_commander_proc.pid})")
 
 
+def ensure_dashboard_running():
+    """Start Streamlit dashboard if it isn't already running.
+    Must be launched from ROOT.parent to avoid shadowing the watchdog pip package."""
+    global _dashboard_proc
+    if _dashboard_proc is not None and _dashboard_proc.poll() is None:
+        return  # still alive
+    log_path = str(ROOT / "logs" / f"dashboard_{date.today()}.log")
+    with open(log_path, "a", encoding="utf-8") as fout:
+        _dashboard_proc = subprocess.Popen(
+            [PYTHON, "-m", "streamlit", "run", DASHBOARD_SCRIPT,
+             "--server.port", "8501",
+             "--server.headless", "true",
+             "--server.fileWatcherType", "none"],
+            stdout=fout, stderr=fout,
+            cwd=str(ROOT.parent),  # run from parent dir to avoid watchdog.py name clash
+        )
+    logger.info(f"Dashboard started (PID {_dashboard_proc.pid}) → http://localhost:8501")
+
+
 def run_bot() -> int:
     log_path = bot_log_path()
     logger.info(f"Starting bot -> log: {log_path}")
@@ -93,9 +114,11 @@ def run_bot() -> int:
 def main():
     logger.info("Watchdog started.")
     ensure_commander_running()  # Start Telegram commander immediately on boot
+    ensure_dashboard_running()  # Start dashboard immediately on boot
     while True:
         now = now_ist()
         ensure_commander_running()  # Restart if it crashed
+        ensure_dashboard_running()  # Restart if it crashed
 
         if not is_trading_day(now.date()):
             reason = "Weekend" if not is_weekday(now) else "Market holiday"
