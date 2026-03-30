@@ -220,12 +220,16 @@ def main():
         from utils.time_utils import next_trading_day
         tier = get_tier_summary(risk.account_value)
 
+        # Read thresholds from config (single source of truth)
+        vix_reduce = config["risk"].get("vix_reduce_threshold", 22.0)
+        vix_halt   = config["risk"].get("vix_halt_threshold", 28.0)
+
         # Assess blockers and trade probability
         blockers = []
-        if vix >= 20:
-            blockers.append(f"VIX {vix:.1f} — elevated, cautious sizing")
-        if vix >= 25:
-            blockers.append(f"VIX {vix:.1f} >= 25 — new trades halted per risk rules")
+        if vix >= vix_reduce:
+            blockers.append(f"VIX {vix:.1f} >= {vix_reduce} — elevated, cautious sizing")
+        if vix >= vix_halt:
+            blockers.append(f"VIX {vix:.1f} >= {vix_halt} — new trades halted per risk rules")
         if regime.recommendation == "stay_flat":
             blockers.append("Regime: STAY FLAT — no new trades today")
         if risk.kill_switch_active:
@@ -236,11 +240,11 @@ def main():
         # Probability logic
         if regime.recommendation == "stay_flat" or risk.kill_switch_active:
             probability = "Low"
-        elif vix >= 25 and regime.regime.value in ("weak_bear", "strong_bear"):
+        elif vix >= vix_halt:
             probability = "Low"
-        elif regime.regime.value in ("strong_bull", "weak_bull") and vix < 20:
+        elif regime.regime.value in ("strong_bull", "weak_bull") and vix < vix_reduce:
             probability = "High"
-        elif len(watchlist) >= 5 and vix < 25:
+        elif len(watchlist) >= 5 and vix < vix_halt:
             probability = "Medium"
         else:
             probability = "Low"

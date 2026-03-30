@@ -32,6 +32,9 @@ risk:
   min_trade_value: 2000
   size_reduction_after_losses: 0.50
   setup_quality_min: "B"
+  vix_reduce_threshold: 22.0   # cautious sizing above this
+  vix_halt_threshold: 28.0     # no new trades above this
+  vix_kill_threshold: 35.0     # close all positions above this
 
 strategy:
   active:
