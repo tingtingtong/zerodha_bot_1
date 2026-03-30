@@ -27,7 +27,11 @@ class EMAPullbackStrategy(BaseStrategy):
     def generate_signal(self, symbol, df_primary, df_daily,
                         regime_bullish, capital_per_trade, charges_estimate) -> TradeSetup:
 
-        # No regime gate — EMA pullback scans all days; price/RSI/volume conditions decide
+        # Regime gate — EMA pullback only trades in bull markets (strong_bull or weak_bull)
+        # In bear/sideways, mean_reversion handles signal generation instead
+        if not regime_bullish:
+            return self._no_trade(symbol, "regime_not_bullish")
+
         if df_primary is None or len(df_primary) < 30:
             return self._no_trade(symbol, "insufficient_15m_data")
 
