@@ -55,13 +55,13 @@ market_research:
     - "GOLDBEES"
     - "JUNIORBEES"
     - "ITBEES"
-  # Preferred symbols always included in watchlist scoring — ranked by backtest quality
+  # Preferred symbols ranked by backtest evidence across all periods
   preferred_symbols:
-    - "KOTAKBANK"    # #1: 75% WR, +₹218, Sharpe 8.64 (2024); mean_reversion best fit
-    - "AXISBANK"     # #2: mean_reversion 60% WR, +₹42, Sharpe 7.16 (Feb-Mar 2026)
-    - "HDFCBANK"     # #3: mean_reversion 57% WR, stable low drawdown
-    - "ICICIBANK"    # #4: liquid, near break-even, tight spreads
-    - "SBIN"         # #5: high volume, ₹800 range — good qty at Nano tier
+    - "SBIN"         # #1: 51% WR 73 trades 5yr, best long-term consistency
+    - "AXISBANK"     # #2: 59% WR 92 trades 15m, best recent performer
+    - "KOTAKBANK"    # #3: 55% WR 3yr, Sharpe 3.38, highest quality signals
+    - "ICICIBANK"    # #4: 47% WR 5yr, liquid, consistent
+    # HDFCBANK removed: loses money in every period (35% WR, Sharpe -3.38)
   universe_size: 50
   max_watchlist_size: 10
   max_active_candidates: 5
