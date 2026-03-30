@@ -40,6 +40,7 @@ STOP_HOUR, STOP_MIN  = 15, 30  # 3:30 PM IST — stop restarting after this
 
 _commander_proc  = None  # global handle so watchdog can restart it if needed
 _dashboard_proc  = None
+_login_done_date = None  # track which date we last successfully logged in
 
 
 def now_ist() -> datetime:
@@ -92,7 +93,33 @@ def ensure_dashboard_running():
             stdout=fout, stderr=fout,
             cwd=str(ROOT.parent),  # run from parent dir to avoid watchdog.py name clash
         )
-    logger.info(f"Dashboard started (PID {_dashboard_proc.pid}) → http://localhost:8501")
+    logger.info(f"Dashboard started (PID {_dashboard_proc.pid}) -> http://localhost:8501")
+
+
+def ensure_zerodha_login() -> bool:
+    """Run auto-login once per calendar day. Returns True if token is ready."""
+    global _login_done_date
+    today = date.today()
+    if _login_done_date == today:
+        return True  # already logged in today
+
+    login_script = str(ROOT / "brokers" / "zerodha_auto_login.py")
+    log_path = str(ROOT / "logs" / f"autologin_{today}.log")
+    logger.info("Running Zerodha auto-login...")
+    with open(log_path, "a", encoding="utf-8") as fout:
+        result = subprocess.run(
+            [PYTHON, login_script],
+            stdout=fout, stderr=fout,
+            cwd=str(ROOT),
+            timeout=120,
+        )
+    if result.returncode == 0:
+        _login_done_date = today
+        logger.info("Zerodha auto-login succeeded.")
+        return True
+    else:
+        logger.error(f"Zerodha auto-login FAILED (exit {result.returncode}) — check logs/autologin_{today}.log")
+        return False
 
 
 def run_bot() -> int:
@@ -142,7 +169,11 @@ def main():
             time.sleep(min(wait, 60))
             continue
 
-        # It's a weekday between 9:00 and 15:30 — run (or restart) the bot
+        # It's a weekday between 9:00 and 15:30 — ensure login then run bot
+        if not ensure_zerodha_login():
+            logger.warning("Login failed — retrying in 60s...")
+            time.sleep(60)
+            continue
         run_bot()
 
         # After bot exits, check if we should restart
