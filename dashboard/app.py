@@ -5,6 +5,7 @@ Run: streamlit run dashboard/app.py
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -29,17 +30,46 @@ st.set_page_config(
 st.title("📈 ZerodhaBot — Live Dashboard")
 
 
+ROOT_DIR = Path(__file__).parent.parent
+
+
 def load_account_state():
+    fp = ROOT_DIR / "journaling" / "account_state.json"
     try:
-        with open("journaling/account_state.json") as f:
+        with open(fp) as f:
             return json.load(f)
     except Exception:
-        return {"account_value": 20000, "daily_pnl": 0, "last_updated": "N/A"}
+        return {"account_value": 0, "daily_pnl": 0, "last_updated": "N/A"}
+
+
+def fetch_live_balance():
+    """Try to fetch live balance from Zerodha using saved token."""
+    try:
+        import json as _json
+        from dotenv import load_dotenv
+        load_dotenv(ROOT_DIR / ".env")
+        token_file = ROOT_DIR / "config" / ".zerodha_token.json"
+        if not token_file.exists():
+            return None, "No saved token"
+        data = _json.loads(token_file.read_text())
+        token = data.get("access_token")
+        api_key = os.environ.get("ZERODHA_API_KEY")
+        if not api_key or not token:
+            return None, "Missing credentials"
+        from kiteconnect import KiteConnect
+        kite = KiteConnect(api_key=api_key)
+        kite.set_access_token(token)
+        funds = kite.margins()
+        eq = funds.get("equity", {})
+        balance = eq.get("net", 0)
+        return float(balance), None
+    except Exception as e:
+        return None, str(e)[:80]
 
 
 def load_todays_trades():
     today = datetime.now(IST).strftime("%Y-%m-%d")
-    fp = Path(f"journaling/logs/trades_{today}.json")
+    fp = ROOT_DIR / "journaling" / "logs" / f"trades_{today}.json"
     if fp.exists():
         with open(fp) as f:
             return json.load(f)
@@ -48,7 +78,7 @@ def load_todays_trades():
 
 def load_daily_reports(days: int = 30):
     reports = []
-    for fp in sorted(Path("reporting/output").glob("daily_*.json"), reverse=True)[:days]:
+    for fp in sorted((ROOT_DIR / "reporting" / "output").glob("daily_*.json"), reverse=True)[:days]:
         try:
             with open(fp) as f:
                 reports.append(json.load(f))
@@ -59,21 +89,56 @@ def load_daily_reports(days: int = 30):
 
 # ── Header metrics ────────────────────────────────────────────────
 state = load_account_state()
-account_value = state.get("account_value", 20000)
-daily_pnl = state.get("daily_pnl", 0)
-last_updated = state.get("last_updated", "N/A")
+account_value = state.get("account_value", 0)
+daily_pnl     = state.get("daily_pnl", 0)
+last_updated  = state.get("last_updated", "N/A")
+
+# Detect stale data (more than 1 day old)
+data_stale = False
+try:
+    lu = datetime.fromisoformat(last_updated)
+    if lu.tzinfo is None:
+        lu = IST.localize(lu)
+    age_hours = (datetime.now(IST) - lu).total_seconds() / 3600
+    data_stale = age_hours > 24
+except Exception:
+    data_stale = True
+
+# Sidebar: live balance fetch
+with st.sidebar:
+    st.header("Account Sync")
+    if st.button("Fetch Live Balance from Zerodha"):
+        live_bal, err = fetch_live_balance()
+        if live_bal is not None:
+            # Update account_state.json
+            state["account_value"] = live_bal
+            state["last_updated"] = datetime.now(IST).isoformat()
+            fp = ROOT_DIR / "journaling" / "account_state.json"
+            fp.write_text(json.dumps(state, indent=2))
+            account_value = live_bal
+            data_stale = False
+            st.success(f"Updated: ₹{live_bal:,.2f}")
+        else:
+            st.error(f"Failed: {err}\nRe-login the bot first.")
+    if data_stale:
+        st.warning(f"Data is stale\nLast update: {last_updated[:16]}")
+    else:
+        st.info(f"Last sync: {last_updated[:16]}")
+
+if data_stale:
+    st.warning(f"Showing cached data from {last_updated[:10]} — bot has not run today. Start the bot or use 'Fetch Live Balance' in the sidebar.")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("💰 Account Value", f"₹{account_value:,.2f}",
+col1.metric("Account Value", f"₹{account_value:,.2f}",
             delta=f"₹{daily_pnl:+,.2f} today")
-col2.metric("📊 Daily P&L", f"₹{daily_pnl:+,.2f}",
+col2.metric("Daily P&L", f"₹{daily_pnl:+,.2f}",
             delta=f"{(daily_pnl/account_value*100):+.2f}%" if account_value else "0%")
 
 trades = load_todays_trades()
 closed = [t for t in trades if "closed" in t.get("state", "")]
-col3.metric("🔄 Trades Today", len(closed),
+col3.metric("Trades Today", len(closed),
             delta=f"{sum(1 for t in closed if (t.get('net_pnl') or 0) > 0)} wins")
-col4.metric("🕐 Last Updated", last_updated[-8:] if len(last_updated) > 8 else last_updated)
+col4.metric("Last Updated", last_updated[:10] if len(last_updated) >= 10 else last_updated)
 
 st.divider()
 
