@@ -10,7 +10,7 @@ class EMAPullbackStrategy(BaseStrategy):
 
     EMA_FAST = 9
     EMA_SLOW = 21
-    MIN_VOL_MULT = 1.2
+    MIN_VOL_MULT = 1.5   # raised from 1.2 — need genuine volume surge, not just above average
     MIN_RR = 1.5
     MAX_HOLD_CANDLES = 16
     NO_TRADE_BEFORE = "09:45"
@@ -51,14 +51,29 @@ class EMAPullbackStrategy(BaseStrategy):
         if cur <= ema9[-1] or cur <= ema21[-1]:
             return self._no_trade(symbol, "price_below_ema")
 
+        # EMA9 must be rising (slope positive over last 3 candles) — not just above EMA21
+        if ema9[-1] <= ema9[-3]:
+            return self._no_trade(symbol, "ema9_not_rising")
+
+        # Daily trend filter: stock must be above its 20-day EMA (in overall uptrend)
+        if df_daily is not None and len(df_daily) >= 22:
+            daily_c = df_daily["close"].values
+            d_ema20 = self._ema(daily_c, 20)
+            if daily_c[-1] < d_ema20[-1]:
+                return self._no_trade(symbol, "below_daily_ema20")
+
         # Pullback: low touched EMA9 in last 5 candles AND current price is above EMA9 (bounce confirmed)
         pullback = (cur > ema9[-1]) and any(l[-i] <= ema9[-i] * 1.005 for i in range(2, 6) if i < len(l))
         if not pullback:
             return self._no_trade(symbol, "no_pullback")
 
+        # Bounce candle must close above EMA9 (not just touch and fail)
+        if c[-1] <= ema9[-1]:
+            return self._no_trade(symbol, "bounce_candle_below_ema9")
+
         rsi = self._rsi(c, 14)
-        if rsi < 50:
-            return self._no_trade(symbol, f"rsi_below_50_{rsi:.1f}")
+        if rsi < 55:
+            return self._no_trade(symbol, f"rsi_below_55_{rsi:.1f}")
 
         avg_vol = float(np.mean(v[-20:-1])) if len(v) > 20 else float(np.mean(v))
         if v[-1] < avg_vol * self.MIN_VOL_MULT:
@@ -91,7 +106,7 @@ class EMAPullbackStrategy(BaseStrategy):
             return self._no_trade(symbol, f"rr_{net_rr:.2f}_below_{self.MIN_RR}")
 
         vspike = v[-1] / max(avg_vol, 1)
-        quality = "A" if rsi > 60 and vspike >= 1.5 else "B" if rsi >= 55 else "C"
+        quality = "A" if rsi > 65 and vspike >= 2.0 else "B" if rsi >= 55 else "C"
 
         return TradeSetup(
             signal=Signal.LONG, symbol=symbol,

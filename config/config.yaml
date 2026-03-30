@@ -39,8 +39,8 @@ risk:
 strategy:
   active:
     - "ema_pullback"
-    - "etf_momentum"
     - "mean_reversion"
+    # etf_momentum disabled — backtests show consistent losses (win rate 34%, PF 0.66)
   primary_timeframe: "15m"
   daily_trend_filter: true
   no_trade_before_ist: "09:45"
@@ -55,6 +55,13 @@ market_research:
     - "GOLDBEES"
     - "JUNIORBEES"
     - "ITBEES"
+  # Preferred symbols always included in watchlist scoring — proven intraday movers
+  preferred_symbols:
+    - "HDFCBANK"     # best backtest: 46% WR, PF 1.5, Sharpe 2.52
+    - "ICICIBANK"    # near break-even, liquid, tight spreads
+    - "AXISBANK"     # high liquidity, good intraday range
+    - "KOTAKBANK"    # consistent mover
+    - "SBIN"         # high volume, ₹800 range — good qty at Nano tier
   universe_size: 50
   max_watchlist_size: 10
   max_active_candidates: 5

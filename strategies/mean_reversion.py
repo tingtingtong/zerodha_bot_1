@@ -24,9 +24,9 @@ class MeanReversionStrategy(BaseStrategy):
 
     MIN_RR = 1.3          # Lower bar — moves are counter-trend, shorter
     MAX_HOLD_CANDLES = 8  # 2 hours max — get in, get out
-    RSI_OVERSOLD = 45     # Entry only when oversold
+    RSI_OVERSOLD = 35     # raised threshold — genuine oversold only (was 45)
     RSI_MAX = 50          # Don't enter if already recovered too much
-    VOLUME_MIN = 1.3      # Need some volume to confirm bounce
+    VOLUME_MIN = 1.5      # raised from 1.3 — need real demand surge to confirm bounce
 
     @property
     def strategy_name(self) -> str:

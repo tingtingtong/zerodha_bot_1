@@ -69,16 +69,24 @@ class WatchlistBuilder:
         to_date = datetime.now(IST)
         scores: List[StockScore] = []
 
-        for sym in ETF_UNIVERSE:
+        # Preferred symbols — always scored first, guaranteed consideration
+        preferred = config.get("preferred_symbols", [])
+        scanned = set()
+        for sym in preferred:
+            if sym in scanned:
+                continue
+            scanned.add(sym)
             try:
                 df = data_registry.get_historical(sym, "1d", from_date, to_date)
-                s = self.screener.score(sym, df, sector="ETF")
-                if s.tradeable:
-                    scores.append(s)
+                s = self.screener.score(sym, df, upcoming_event=(sym in event_set))
+                scores.append(s)  # include regardless of tradeable flag — let score decide
             except Exception as e:
-                logger.debug(f"ETF {sym}: {e}")
+                logger.debug(f"Preferred {sym}: {e}")
 
         for sym in NIFTY_200[:universe_size]:
+            if sym in scanned:
+                continue
+            scanned.add(sym)
             try:
                 df = data_registry.get_historical(sym, "1d", from_date, to_date)
                 s = self.screener.score(sym, df, upcoming_event=(sym in event_set))
