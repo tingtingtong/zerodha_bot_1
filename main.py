@@ -315,6 +315,15 @@ def main():
                 # VIX gate reasoning
                 if vix >= 20:
                     hourly_steps.append(f"🚫 VIX {vix:.1f} >= 20 — trading halted (threshold: 20)")
+                # Re-check regime — exit stay-flat if VIX has dropped enough
+                if vix < 25:
+                    logger.info(f"VIX dropped to {vix:.1f} — re-evaluating regime, restarting bot.")
+                    if config["notifications"]["enabled"]:
+                        notifier.send(
+                            f"VIX dropped to {vix:.1f} — conditions improved.\n"
+                            f"Restarting bot to scan for trades."
+                        )
+                    sys.exit(0)  # watchdog will restart the bot fresh
                 # Regime gate reasoning
                 if regime.recommendation == "stay_flat":
                     hourly_steps.append(f"🚫 Regime not bullish — no signal scan performed")
