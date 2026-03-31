@@ -184,8 +184,28 @@ def main():
     # ── Market regime + watchlist (pre-market) ────────────────────
     logger.info("Building pre-market watchlist...")
     from datetime import timedelta
-    nifty_daily = data.get_historical("^NSEI", "1d",
-                                      now - timedelta(days=400), now)
+    # Try multiple NIFTY symbols — yfinance can block cloud IPs for some symbols
+    nifty_daily = None
+    for nifty_sym in ("^NSEI", "NIFTY50.NS", "^NIFTY50"):
+        try:
+            nifty_daily = data.get_historical(nifty_sym, "1d",
+                                              now - timedelta(days=400), now)
+            if nifty_daily is not None and len(nifty_daily) > 10:
+                logger.info(f"NIFTY data fetched via {nifty_sym} ({len(nifty_daily)} days)")
+                break
+        except Exception as e:
+            logger.warning(f"NIFTY fetch failed for {nifty_sym}: {e}")
+    if nifty_daily is None or len(nifty_daily) == 0:
+        logger.warning("All NIFTY data sources failed — defaulting to sideways regime")
+        import pandas as pd
+        import numpy as np
+        # Minimal flat DataFrame so regime detector defaults to sideways
+        idx = pd.date_range(end=now, periods=60, freq="B")
+        nifty_daily = pd.DataFrame({
+            "open": 22000.0, "high": 22100.0, "low": 21900.0,
+            "close": 22000.0, "volume": 1000000,
+        }, index=idx)
+
     # Use yfinance VIX proxy
     try:
         vix_data = data.get_index_data("INDIA_VIX")
