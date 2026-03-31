@@ -162,6 +162,8 @@ def generate_daily_report(
     vix: float = 0.0,
     kill_switch_triggered: bool = False,
     rejected_trades: List[dict] = None,
+    options_pnl: float = 0.0,
+    options_trades: int = 0,
 ) -> dict:
     """Return a report dict summarising today's session."""
     closed = [t for t in trades if t.get("net_pnl") is not None]
@@ -189,11 +191,17 @@ def generate_daily_report(
         "kill_switch": kill_switch_triggered,
         "rejected_count": len(rejected_trades or []),
         "trade_details": trades,
+        "options_pnl": round(options_pnl, 2),
+        "options_trades": options_trades,
     }
 
 
 def format_daily_report(report: dict) -> str:
     """Return a human-readable report string."""
+    opt_line = ""
+    if report.get("options_trades", 0) > 0:
+        sign = "+" if report["options_pnl"] >= 0 else ""
+        opt_line = f"\n  Options P&L    : Rs.{sign}{report['options_pnl']:>10,.2f}  ({report['options_trades']} trades)"
     lines = [
         "=" * 60,
         f"  ZERODHA BOT — DAILY REPORT  {report.get('date', '')}",
@@ -208,7 +216,7 @@ def format_daily_report(report: dict) -> str:
         f"  Win Rate       : {report['win_rate']:.1f}%",
         f"  Gross Profit   : Rs.{report['gross_profit']:>+10,.2f}",
         f"  Gross Loss     : Rs.{report['gross_loss']:>+10,.2f}",
-        f"  Total Charges  : Rs.{report['total_charges']:>10,.2f}",
+        f"  Total Charges  : Rs.{report['total_charges']:>10,.2f}" + opt_line,
         f"  Rejected Scans : {report['rejected_count']}",
         "=" * 60,
     ]

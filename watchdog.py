@@ -127,7 +127,7 @@ def run_bot() -> int:
     logger.info(f"Starting bot -> log: {log_path}")
     with open(log_path, "a", encoding="utf-8") as fout:
         proc = subprocess.Popen(
-            [PYTHON, BOT_SCRIPT, "--mode", "live"],
+            [PYTHON, BOT_SCRIPT, "--mode", "paper"],
             stdout=fout, stderr=fout,
             cwd=str(Path(__file__).parent),
         )

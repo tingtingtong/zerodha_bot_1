@@ -21,7 +21,7 @@ class SimulatedBroker(BrokerBase):
         self.capital = initial_capital
         self.positions: Dict[str, Position] = {}
         self.orders: Dict[str, OrderResponse] = {}
-        # Pending SL/SL-M orders waiting for price to hit trigger
+        # Pending SL/SL-LIMIT orders waiting for price to hit trigger
         # { oid: (OrderRequest, trigger_price, seg) }
         self._pending_sl: Dict[str, tuple] = {}
         self.trade_log: List[dict] = []
@@ -48,7 +48,7 @@ class SimulatedBroker(BrokerBase):
                                  datetime.now(IST), "pending_sl", True)
             self.orders[oid] = resp
             self._pending_sl[oid] = (order, trigger, seg)
-            logger.info(f"[PAPER SL  ] {order.quantity} {order.symbol} trigger@₹{trigger:.2f} — pending")
+            logger.info(f"[PAPER SL  ] {order.quantity} {order.symbol} trigger@Rs.{trigger:.2f} — pending")
             return resp
 
         fp = self._fill_price(order)
@@ -69,6 +69,14 @@ class SimulatedBroker(BrokerBase):
         return base
 
     def _buy(self, order, oid, fp, seg):
+        sym = order.symbol
+        pos = self.positions.get(sym)
+
+        # Covering an existing short position
+        if pos and pos.side == "short":
+            return self._cover_short(order, oid, fp, seg)
+
+        # Opening / adding to a long position
         tv = fp * order.quantity
         charges = calculate_charges(tv, tv, seg).total
         cost = tv + charges
@@ -76,13 +84,10 @@ class SimulatedBroker(BrokerBase):
             return self._rejected(oid, f"insufficient_capital_{self.capital:.0f}")
         self.capital -= cost
         self.total_charges += charges
-        sym = order.symbol
-        if sym in self.positions:
-            pos = self.positions[sym]
+        if pos and pos.side == "long":
             nq = pos.qty + order.quantity
-            self.positions[sym].avg_price = round(
-                (pos.avg_price * pos.qty + fp * order.quantity) / nq, 4)
-            self.positions[sym].qty = nq
+            pos.avg_price = round((pos.avg_price * pos.qty + fp * order.quantity) / nq, 4)
+            pos.qty = nq
         else:
             self.positions[sym] = Position(
                 symbol=sym, qty=order.quantity, avg_price=fp,
@@ -92,30 +97,87 @@ class SimulatedBroker(BrokerBase):
         resp = OrderResponse(oid, OrderStatus.COMPLETE, order.quantity, fp,
                              datetime.now(IST), "sim_buy", True)
         self.orders[oid] = resp
-        logger.info(f"[PAPER BUY ] {order.quantity} {sym} @₹{fp:.2f} | charges:₹{charges:.2f} | cap:₹{self.capital:,.2f}")
+        logger.info(f"[PAPER BUY ] {order.quantity} {sym} @Rs.{fp:.2f} | charges:Rs.{charges:.2f} | cap:Rs.{self.capital:,.2f}")
         return resp
 
     def _sell(self, order, oid, fp, seg):
         sym = order.symbol
-        if sym not in self.positions or self.positions[sym].qty < order.quantity:
-            return self._rejected(oid, "no_position")
+        pos = self.positions.get(sym)
+
+        # Closing an existing long position
+        if pos and pos.side == "long" and pos.qty >= order.quantity:
+            buy_val = pos.avg_price * order.quantity
+            sell_val = fp * order.quantity
+            charges = calculate_charges(buy_val, sell_val, seg).total
+            pnl = sell_val - buy_val - charges
+            self.capital += sell_val - charges
+            self.total_charges += charges
+            self.total_gross_pnl += pnl
+            pos.qty -= order.quantity
+            if pos.qty == 0:
+                del self.positions[sym]
+            self._log(order, fp, pnl, charges, oid)
+            resp = OrderResponse(oid, OrderStatus.COMPLETE, order.quantity, fp,
+                                 datetime.now(IST), "sim_sell", True)
+            self.orders[oid] = resp
+            sign = "+" if pnl >= 0 else ""
+            logger.info(f"[PAPER SELL] {order.quantity} {sym} @Rs.{fp:.2f} | P&L:{sign}Rs.{pnl:.2f} | cap:Rs.{self.capital:,.2f}")
+            return resp
+
+        # Opening a short position (selling without owning — paper short)
+        if pos is None or pos.side == "short":
+            return self._short_sell(order, oid, fp, seg)
+
+        return self._rejected(oid, "no_position")
+
+    def _short_sell(self, order, oid, fp, seg):
+        """Open or add to a short position. Receives cash from the sale."""
+        sym = order.symbol
+        tv = fp * order.quantity
+        charges = calculate_charges(tv, tv, seg).total
+        # In a real short, we receive proceeds but must hold margin.
+        # Paper mode: simply add net proceeds to capital.
+        self.capital += tv - charges
+        self.total_charges += charges
+        pos = self.positions.get(sym)
+        if pos and pos.side == "short":
+            nq = pos.qty + order.quantity
+            pos.avg_price = round((pos.avg_price * pos.qty + fp * order.quantity) / nq, 4)
+            pos.qty = nq
+        else:
+            self.positions[sym] = Position(
+                symbol=sym, qty=order.quantity, avg_price=fp,
+                current_price=fp, unrealized_pnl=0.0,
+                product=order.product, side="short",
+            )
+        resp = OrderResponse(oid, OrderStatus.COMPLETE, order.quantity, fp,
+                             datetime.now(IST), "sim_short_sell", True)
+        self.orders[oid] = resp
+        logger.info(f"[PAPER SHORT] {order.quantity} {sym} @Rs.{fp:.2f} | charges:Rs.{charges:.2f} | cap:Rs.{self.capital:,.2f}")
+        return resp
+
+    def _cover_short(self, order, oid, fp, seg):
+        """Close (cover) a short position by buying back. P&L = sell_price - buy_price."""
+        sym = order.symbol
         pos = self.positions[sym]
-        buy_val = pos.avg_price * order.quantity
-        sell_val = fp * order.quantity
-        charges = calculate_charges(buy_val, sell_val, seg).total
+        qty = min(order.quantity, pos.qty)
+        sell_val = pos.avg_price * qty   # what we received when we shorted
+        buy_val = fp * qty               # what we pay to cover
+        charges = calculate_charges(sell_val, buy_val, seg).total
         pnl = sell_val - buy_val - charges
-        self.capital += sell_val - charges
+        # Pay for the cover buy
+        self.capital -= buy_val + charges
         self.total_charges += charges
         self.total_gross_pnl += pnl
-        pos.qty -= order.quantity
+        pos.qty -= qty
         if pos.qty == 0:
             del self.positions[sym]
         self._log(order, fp, pnl, charges, oid)
-        resp = OrderResponse(oid, OrderStatus.COMPLETE, order.quantity, fp,
-                             datetime.now(IST), "sim_sell", True)
+        resp = OrderResponse(oid, OrderStatus.COMPLETE, qty, fp,
+                             datetime.now(IST), "sim_cover_short", True)
         self.orders[oid] = resp
         sign = "+" if pnl >= 0 else ""
-        logger.info(f"[PAPER SELL] {order.quantity} {sym} @₹{fp:.2f} | P&L:{sign}₹{pnl:.2f} | cap:₹{self.capital:,.2f}")
+        logger.info(f"[PAPER COVER] {qty} {sym} @Rs.{fp:.2f} | P&L:{sign}Rs.{pnl:.2f} | cap:Rs.{self.capital:,.2f}")
         return resp
 
     def _log(self, order, fp, pnl, charges, oid):
@@ -155,27 +217,38 @@ class SimulatedBroker(BrokerBase):
         if symbol in self.positions:
             p = self.positions[symbol]
             p.current_price = price
-            p.unrealized_pnl = (price - p.avg_price) * p.qty
+            if p.side == "short":
+                p.unrealized_pnl = (p.avg_price - price) * p.qty  # profit when price falls
+            else:
+                p.unrealized_pnl = (price - p.avg_price) * p.qty
 
         # Check if any pending SL for this symbol should trigger
         for oid, (order, trigger, seg) in list(self._pending_sl.items()):
             if order.symbol != symbol:
                 continue
+            # Long SL: SELL order triggers when price falls to trigger
             if order.side == OrderSide.SELL and price <= trigger:
-                # Trigger hit — fill the SL order at trigger price (with slippage)
                 fill_price = round(trigger * (1 - SLIPPAGE_PCT / 100), 2)
                 resp = self._sell(order, oid, fill_price, seg)
                 if resp.status == OrderStatus.COMPLETE:
                     self.orders[oid] = resp
                     del self._pending_sl[oid]
-                    logger.info(f"[PAPER SL HIT] {order.symbol} trigger@₹{trigger:.2f} filled@₹{fill_price:.2f}")
+                    logger.info(f"[PAPER SL HIT] {order.symbol} trigger@Rs.{trigger:.2f} filled@Rs.{fill_price:.2f}")
+            # Short SL: BUY order triggers when price rises to trigger
+            elif order.side == OrderSide.BUY and price >= trigger:
+                fill_price = round(trigger * (1 + SLIPPAGE_PCT / 100), 2)
+                resp = self._buy(order, oid, fill_price, seg)
+                if resp.status == OrderStatus.COMPLETE:
+                    self.orders[oid] = resp
+                    del self._pending_sl[oid]
+                    logger.info(f"[PAPER SL HIT SHORT] {order.symbol} trigger@Rs.{trigger:.2f} filled@Rs.{fill_price:.2f}")
 
     def exit_all_positions(self) -> List[OrderResponse]:
-        # Cancel all pending SLs first
         self._pending_sl.clear()
         responses = []
         for sym, pos in list(self.positions.items()):
-            req = OrderRequest(sym, OrderSide.SELL, pos.qty, OrderType.MARKET,
+            side = OrderSide.BUY if pos.side == "short" else OrderSide.SELL
+            req = OrderRequest(sym, side, pos.qty, OrderType.MARKET,
                                pos.product, pos.current_price, tag="emergency_exit")
             responses.append(self.place_order(req))
         return responses

@@ -81,8 +81,8 @@ class TestEMAPullback:
             result = strat.generate_signal("RELIANCE", make_15m(), make_daily(),
                                            regime_bullish=False, capital_per_trade=8000,
                                            charges_estimate=50)
-        # Should NOT reject with "regime_not_bullish" — regime gate was removed
-        assert result.rejection_reason != "regime_not_bullish"
+        # EMA Pullback gates on regime_bullish — bear regime correctly rejected
+        assert result.rejection_reason == "regime_not_bullish"
 
     def test_strategy_name(self):
         assert EMAPullbackStrategy().strategy_name == "EMAPullback"

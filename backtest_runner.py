@@ -95,7 +95,7 @@ def run_backtest(
             symbol=symbol,
             df_primary=slice_15m,
             df_daily=slice_daily,
-            regime_bullish=True,  # Simplified: always bullish in backtest
+            regime_bullish=True,  # backtest passes True; strategies gate themselves via regime_bullish
             capital_per_trade=capital_per_trade,
             charges_estimate=charges,
         )
@@ -111,7 +111,7 @@ def run_backtest(
 
         # Look ahead for outcome (next 16 candles)
         outcome_candles = intraday_df.iloc[i + 1: i + 17]
-        net_pnl = simulate_outcome(setup, qty, outcome_candles, charges)
+        net_pnl = simulate_outcome(setup, qty, outcome_candles, charges, is_short=(setup.signal.value == "short"))
 
         account += net_pnl
         trades.append({
@@ -167,7 +167,8 @@ def run_backtest(
         logger.info(f"Results saved: {out_file}")
 
 
-def simulate_outcome(setup, qty: int, future_candles, charges: float) -> float:
+def simulate_outcome(setup, qty: int, future_candles, charges: float,
+                     is_short: bool = False) -> float:
     """Look-ahead simulation — checks if SL or target hit in next candles."""
     entry = setup.entry_price
     sl = setup.stop_loss
@@ -182,29 +183,47 @@ def simulate_outcome(setup, qty: int, future_candles, charges: float) -> float:
         high = float(candle.get("high", entry))
         low = float(candle.get("low", entry))
 
-        # Check T1 first (before SL on same candle — T1 closer to entry)
-        if not partial_exit_done and high >= t1:
-            half = remaining // 2
-            if half > 0:
-                pnl_partial = (t1 - entry) * half
-                remaining -= half
-                partial_exit_done = True
+        if is_short:
+            # Short: profit when price falls; T1/T2 hit when LOW reaches target; SL hit when HIGH crosses SL
+            if not partial_exit_done and low <= t1:
+                half = remaining // 2
+                if half > 0:
+                    pnl_partial = (entry - t1) * half
+                    remaining -= half
+                    partial_exit_done = True
 
-        if high >= t2 and remaining > 0:
-            # T2 hit — full exit
-            pnl_t2 = (t2 - entry) * remaining
-            return round(pnl_partial + pnl_t2 - charges, 2)
+            if low <= t2 and remaining > 0:
+                pnl_t2 = (entry - t2) * remaining
+                return round(pnl_partial + pnl_t2 - charges, 2)
 
-        if low <= sl:
-            # SL hit on remaining shares
-            sl_pnl = (sl - entry) * remaining
-            return round(pnl_partial + sl_pnl - charges, 2)
+            if high >= sl:
+                sl_pnl = (entry - sl) * remaining  # negative (loss)
+                return round(pnl_partial + sl_pnl - charges, 2)
+        else:
+            # Long: profit when price rises
+            if not partial_exit_done and high >= t1:
+                half = remaining // 2
+                if half > 0:
+                    pnl_partial = (t1 - entry) * half
+                    remaining -= half
+                    partial_exit_done = True
+
+            if high >= t2 and remaining > 0:
+                pnl_t2 = (t2 - entry) * remaining
+                return round(pnl_partial + pnl_t2 - charges, 2)
+
+            if low <= sl:
+                sl_pnl = (sl - entry) * remaining
+                return round(pnl_partial + sl_pnl - charges, 2)
 
     # Time exit at last candle close
     if len(future_candles) == 0:
         return round(-charges, 2)
     last_close = float(future_candles.iloc[-1]["close"])
-    time_pnl = (last_close - entry) * remaining
+    if is_short:
+        time_pnl = (entry - last_close) * remaining
+    else:
+        time_pnl = (last_close - entry) * remaining
     return round(pnl_partial + time_pnl - charges, 2)
 
 

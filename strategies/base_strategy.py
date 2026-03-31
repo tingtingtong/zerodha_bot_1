@@ -8,6 +8,7 @@ import numpy as np
 
 class Signal(Enum):
     LONG = "long"
+    SHORT = "short"
     NO_TRADE = "no_trade"
 
 
@@ -31,11 +32,19 @@ class TradeSetup:
     rejection_reason: Optional[str] = None
 
     @property
+    def direction(self) -> str:
+        return self.signal.value  # "long" | "short" | "no_trade"
+
+    @property
     def risk_per_share(self) -> float:
+        if self.signal == Signal.SHORT:
+            return max(self.stop_loss - self.entry_price, 0.0)
         return max(self.entry_price - self.stop_loss, 0.0)
 
     @property
     def reward_per_share_t1(self) -> float:
+        if self.signal == Signal.SHORT:
+            return max(self.entry_price - self.target_1, 0.0)
         return max(self.target_1 - self.entry_price, 0.0)
 
 
@@ -127,3 +136,19 @@ class BaseStrategy(ABC):
         # Hard cap: SL must always be below current price by at least 0.5x ATR
         # Prevents cases where anchor (pullback_low) is above cur due to fast drops
         return min(sl, cur - atr * 0.5)
+
+    def _dynamic_sl_short(self, cur: float, anchor: float, atr: float,
+                           vol_regime: str = "normal") -> float:
+        """Like _dynamic_sl but for SHORT trades — SL is ABOVE entry price.
+
+        anchor   — structural level above price (swing high, EMA9, etc.)
+        Returns the lower of:
+          (a) anchor + small ATR buffer  — structure-based SL
+          (b) cur + multiplier * ATR     — volatility cap
+        """
+        mult = self._VOL_SL_MULT.get(vol_regime, 1.2)
+        structure_sl = anchor + atr * 0.3
+        volatility_sl = cur + atr * mult
+        sl = min(structure_sl, volatility_sl)
+        # Hard cap: SL must always be above current price by at least 0.5x ATR
+        return max(sl, cur + atr * 0.5)

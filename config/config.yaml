@@ -1,13 +1,13 @@
 bot:
   name: "ZerodhaBot"
   version: "1.0.0"
-  mode: "live"                     # paper | semi_auto | live
+  mode: "paper"                    # paper | semi_auto | live
   timezone: "Asia/Kolkata"
   log_level: "INFO"
   log_dir: "journaling/logs"
 
 account:
-  starting_capital: 10000
+  starting_capital: 200000
   currency: "INR"
   persist_state_to: "journaling/account_state.json"
 
@@ -39,6 +39,7 @@ risk:
 strategy:
   active:
     - "ema_pullback"
+    - "ema_breakdown"
     - "mean_reversion"
     # etf_momentum disabled — backtests show consistent losses (win rate 34%, PF 0.66)
   primary_timeframe: "15m"
@@ -55,16 +56,35 @@ market_research:
     - "GOLDBEES"
     - "JUNIORBEES"
     - "ITBEES"
-  # Preferred symbols ranked by backtest evidence across all periods
+  # Preferred symbols — ranked by 5yr backtest (255 stocks scanned, 2021-2026)
+  # Score = net P&L + Sharpe + Profit Factor composite
   preferred_symbols:
-    - "SBIN"         # #1: 51% WR 73 trades 5yr, best long-term consistency
-    - "AXISBANK"     # #2: 59% WR 92 trades 15m, best recent performer
-    - "KOTAKBANK"    # #3: 55% WR 3yr, Sharpe 3.38, highest quality signals
-    - "ICICIBANK"    # #4: 47% WR 5yr, liquid, consistent
-    # HDFCBANK removed: loses money in every period (35% WR, Sharpe -3.38)
-  universe_size: 50
-  max_watchlist_size: 10
-  max_active_candidates: 5
+    - "TITAGARH"     # #1:  73% WR, Sharpe 9.78, avg +1304/mo
+    - "RVNL"         # #2:  65% WR, Sharpe 8.61, avg +1292/mo
+    - "ONGC"         # #3:  68% WR, Sharpe 7.76, avg  +997/mo
+    - "NBCC"         # #4:  69% WR, Sharpe 7.61, avg  +985/mo
+    - "SBIN"         # #5:  62% WR, Sharpe 6.85, avg  +863/mo
+    - "BHEL"         # #6:  56% WR, Sharpe 6.02, avg  +824/mo
+    - "RAYMOND"      # #7:  61% WR, Sharpe 6.32, avg  +933/mo
+    - "PRESTIGE"     # #8:  63% WR, Sharpe 6.01, avg  +818/mo
+    - "BAJAJHLDNG"   # #9:  56% WR, Sharpe 5.66, avg  +811/mo
+    - "VEDL"         # #10: 54% WR, Sharpe 6.36, avg  +836/mo
+    - "CUMMINSIND"   # #11: 62% WR, Sharpe 6.33, avg  +769/mo
+    - "DIXON"        # #12: 62% WR, Sharpe 6.18, avg  +702/mo
+    - "SCHAEFFLER"   # #13: 58% WR, Sharpe 5.35, avg  +757/mo
+    - "SRF"          # #14: 65% WR, Sharpe 5.67, avg  +704/mo
+    - "INDUSTOWER"   # #15: 64% WR, Sharpe 5.65, avg  +658/mo
+    - "WELCORP"      # #16: 56% WR, Sharpe 5.03, avg  +739/mo
+    - "HUDCO"        # #17: 61% WR, Sharpe 5.24, avg  +681/mo
+    - "COFORGE"      # #18: 62% WR, Sharpe 5.14, avg  +607/mo
+    - "KPRMILL"      # #19: 55% WR, Sharpe 4.50, avg  +675/mo
+    - "CRISIL"       # #20: 54% WR, Sharpe 4.78, avg  +606/mo
+    # Removed: AXISBANK (#63), KOTAKBANK (#68), ICICIBANK (#106) — still profitable
+    # but outperformed by smaller/mid-caps in this strategy
+    # Hard avoid: HDFCBANK, BIOCON, IGL, CONCOR, ABFRL, SYNGENE, AMBUJACEM
+  universe_size: 100
+  max_watchlist_size: 20
+  max_active_candidates: 10
   min_score_for_watchlist: 60
   min_avg_daily_turnover: 50000000
   min_avg_daily_volume: 200000
@@ -107,6 +127,15 @@ reporting:
   report_dir: "reporting/output"
   daily_report_time_ist: "15:45"
   save_rejected_trades: true
+
+options:
+  enabled: true              # Paper mode only — live options need separate F&O setup
+  capital_pct: 0.10          # 10% of total capital per options trade (e.g. Rs.20k at Rs.2L)
+  # Grade-A signals only: RSI > 65 + volume >= 2x → buy NIFTY weekly ATM CE (long) or PE (short)
+  # Lot size: 25 | Strike: ATM rounded to nearest 50 | Estimated premium: 0.4% of NIFTY spot
+  # P&L simulation: delta=0.5, stock-to-NIFTY correlation=0.35
+  # Exits: 50% at equity T1, remaining at equity full exit
+  max_concurrent_positions: 3
 
 backtesting:
   default_start: "2022-01-01"

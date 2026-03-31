@@ -1,11 +1,13 @@
 from typing import Dict, List
 from .base_strategy import BaseStrategy
 from .ema_pullback import EMAPullbackStrategy
+from .ema_breakdown import EMABreakdownStrategy
 from .etf_momentum import ETFMomentumStrategy
 from .mean_reversion import MeanReversionStrategy
 
 _REGISTRY: Dict[str, BaseStrategy] = {
     "ema_pullback": EMAPullbackStrategy(),
+    "ema_breakdown": EMABreakdownStrategy(),
     "etf_momentum": ETFMomentumStrategy(),
     "mean_reversion": MeanReversionStrategy(),
 }

@@ -70,6 +70,7 @@ class TradeRecord:
     target_2: float
     breakeven_trigger: float
     trailing_step: float
+    direction: str = "long"   # "long" | "short"
     regime_at_entry: str = ""
     trade_id: str = field(
         default_factory=lambda: (
@@ -87,6 +88,7 @@ class TradeRecord:
     realized_pnl: Optional[float] = None
     charges: Optional[float] = None
     net_pnl: Optional[float] = None
+    max_hold_candles: int = 16
     candles_held: int = 0
     partial_exits: List[PartialExit] = field(default_factory=list)
     state_history: List[str] = field(default_factory=list)
@@ -148,6 +150,8 @@ class TradeRecord:
             "realized_pnl": self.realized_pnl,
             "charges": self.charges,
             "net_pnl": self.net_pnl,
+            "max_hold_candles": self.max_hold_candles,
             "candles_held": self.candles_held,
             "regime_at_entry": self.regime_at_entry,
+            "direction": self.direction,
         }

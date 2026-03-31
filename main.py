@@ -128,6 +128,7 @@ def main():
     from research.watchlist_builder import WatchlistBuilder
     from research.event_calendar import EventCalendar
     from strategies.strategy_registry import get_active_strategies
+    from strategies.options_layer import OptionsLayer
     from utils.time_utils import is_trading_day, is_market_open, now_ist, minutes_to_close, MARKET_OPEN
     from utils.notification import TelegramNotifier
     from utils.charge_calculator import estimate_round_trip_charges, Segment
@@ -137,6 +138,14 @@ def main():
 
     broker = build_broker(config, mode)
     data = build_data_registry(config)
+
+    # Options layer — Grade-A signal amplifier (paper simulation only)
+    opts_cfg = config.get("options", {})
+    options_layer = OptionsLayer(
+        total_capital=account_value,
+        enabled=opts_cfg.get("enabled", True) and mode == "paper",
+        capital_pct=opts_cfg.get("capital_pct", 0.10),
+    )
 
     # In live mode, use actual broker margin as the capital base
     if mode == "live":
@@ -354,6 +363,8 @@ def main():
     hourly_steps = []  # accumulates steps each 15 mins, resets on new slot
     _data_failures: dict = {}  # sym -> (fail_count, last_fail_time)
     _last_data_time = time.time()  # pre-market watchlist build counts as fresh data
+    _symbol_loss_time: dict = {}   # sym -> timestamp of last losing trade (for 2h cooldown)
+    LOSS_COOLDOWN_SEC = 2 * 3600   # 2 hours per-symbol cooldown after a loss
 
     # ── Main trading loop ─────────────────────────────────────────
     logger.info("Entering main trading loop...")
@@ -423,6 +434,13 @@ def main():
             sym = candidate.symbol
 
             if sym in {t.symbol for t in order_mgr.active_trades.values()}:
+                continue
+
+            # Per-symbol loss cooldown: skip for 2h after a losing trade on this symbol
+            loss_ts = _symbol_loss_time.get(sym, 0)
+            if time.time() - loss_ts < LOSS_COOLDOWN_SEC:
+                remaining = int((LOSS_COOLDOWN_SEC - (time.time() - loss_ts)) / 60)
+                logger.debug(f"Skipping {sym} — loss cooldown {remaining}min remaining")
                 continue
 
             fc, lt = _data_failures.get(sym, (0, 0))
@@ -502,6 +520,8 @@ def main():
                         breakeven_trigger=setup.breakeven_trigger,
                         trailing_step=setup.trailing_step,
                         regime_at_entry=regime.regime.value,
+                        direction=setup.direction,
+                        max_hold_candles=setup.max_hold_candles,
                     )
 
                     if mode == "semi_auto":
@@ -527,18 +547,62 @@ def main():
                                 setup.stop_loss, setup.target_1, setup.target_2,
                                 setup.setup_quality,
                             )
+                        # Grade-A? Open leveraged NIFTY options position
+                        if setup.setup_quality == "A":
+                            nifty_spot = nifty_now.get("ltp") or nifty_now.get("close") or 22500
+                            ot = options_layer.open_option(
+                                trade_id=trade.trade_id,
+                                equity_symbol=sym,
+                                direction=setup.direction,
+                                nifty_spot=float(nifty_spot),
+                            )
+                            if ot:
+                                hourly_steps.append(
+                                    f"📈 [OPTIONS] Grade-A: {ot.lots} lots {ot.symbol} "
+                                    f"@ Rs.{ot.entry_premium:.0f}/unit"
+                                )
                         break  # One trade at a time per loop
 
         # ── Update open trade prices and manage exits ──────────────
+        from execution.trade_state_machine import TradeState
         for trade_id, trade in list(order_mgr.active_trades.items()):
             try:
                 quote = data.get_quote(trade.symbol)
+                state_before = trade.state
                 order_mgr.tick(trade.symbol, quote.ltp)
                 if isinstance(broker, __import__("brokers.simulated_broker", fromlist=["SimulatedBroker"]).SimulatedBroker):
                     broker.update_position_price(trade.symbol, quote.ltp)
                 journal.save_trade(trade)
+
+                # Options exits aligned with equity trade
+                if trade_id in options_layer.active:
+                    if state_before != trade.state and trade.state == TradeState.TARGET_1_HIT:
+                        # T1 hit — close half the options position
+                        opt_pnl = options_layer.partial_close(
+                            trade_id, trade.entry_price, quote.ltp)
+                        if opt_pnl:
+                            sign = "+" if opt_pnl >= 0 else ""
+                            hourly_steps.append(
+                                f"📊 [OPTIONS T1] {trade.symbol}: {sign}Rs.{opt_pnl:,.0f}")
             except Exception as e:
                 logger.warning(f"Tick update failed {trade.symbol}: {e}")
+
+        # Close options for trades that were fully exited in this tick
+        for comp in order_mgr.completed_trades:
+            if comp.trade_id in options_layer.active:
+                exit_price = getattr(comp, "exit_price", None) or comp.entry_price
+                opt_pnl = options_layer.close_all(
+                    comp.trade_id, comp.entry_price, exit_price)
+                if opt_pnl:
+                    sign = "+" if opt_pnl >= 0 else ""
+                    hourly_steps.append(
+                        f"📊 [OPTIONS EXIT] {comp.symbol}: {sign}Rs.{opt_pnl:,.0f}")
+            # Track per-symbol loss time for re-entry cooldown
+            if getattr(comp, "net_pnl", None) is not None and comp.net_pnl < 0:
+                _symbol_loss_time[comp.symbol] = time.time()
+
+        # Keep options sizing in sync with current account value
+        options_layer.total_capital = risk.account_value
 
         # Save account state
         journal.save_account_state(risk.account_value, risk.daily_pnl)
@@ -577,6 +641,20 @@ def main():
         logger.debug(f"Sleeping {sleep_seconds}s | Open trades: {len(order_mgr.active_trades)}")
         time.sleep(sleep_seconds)
 
+    # ── Close any options still open at EOD ───────────────────────
+    for tid in list(options_layer.active.keys()):
+        comp = next((t for t in order_mgr.completed_trades if t.trade_id == tid), None)
+        eq_entry = comp.entry_price if comp else 0.0
+        eq_exit = getattr(comp, "exit_price", eq_entry) if comp else eq_entry
+        options_layer.close_all(tid, eq_entry, eq_exit)
+    opt_summary = options_layer.get_summary()
+    if opt_summary["completed_options"] > 0:
+        sign = "+" if opt_summary["total_options_pnl"] >= 0 else ""
+        logger.info(
+            f"Options summary: {opt_summary['completed_options']} trades | "
+            f"Total P&L: {sign}Rs.{opt_summary['total_options_pnl']:,.0f}"
+        )
+
     # ── End of day ────────────────────────────────────────────────
     all_trades = [t.to_dict() for t in order_mgr.completed_trades]
     report = generate_daily_report(
@@ -588,12 +666,50 @@ def main():
         vix=vix,
         kill_switch_triggered=risk.kill_switch_active,
         rejected_trades=rejected_trades,
+        options_pnl=opt_summary["total_options_pnl"],
+        options_trades=opt_summary["completed_options"],
     )
     save_daily_report(report, config["reporting"]["report_dir"])
     print(f"\n{format_daily_report(report)}\n")
 
     if config["notifications"]["enabled"]:
         notifier.send_daily_summary(report)
+
+        # Weekly summary every Friday
+        if now_ist().weekday() == 4:  # 4 = Friday
+            import json as _json
+            from pathlib import Path as _Path
+            from datetime import timedelta as _td
+            week_trades_all = list(all_trades)
+            # Gather Mon–Thu trade files for this calendar week only
+            log_dir = _Path(config["reporting"]["journal_dir"])
+            today_dt = now_ist().date()
+            monday = today_dt - _td(days=today_dt.weekday())
+            for offset in range(4):  # Mon=0 … Thu=3
+                day = monday + _td(days=offset)
+                fp = log_dir / f"trades_{day.strftime('%Y-%m-%d')}.json"
+                if fp.exists():
+                    try:
+                        week_trades_all.extend(_json.loads(fp.read_text()))
+                    except Exception:
+                        pass
+            closed_week = [t for t in week_trades_all if t.get("net_pnl") is not None]
+            week_wins   = [t for t in closed_week if float(t.get("net_pnl", 0)) > 0]
+            week_losses = [t for t in closed_week if float(t.get("net_pnl", 0)) <= 0]
+            week_pnl    = sum(float(t.get("net_pnl", 0)) for t in closed_week)
+            best  = max(closed_week, key=lambda t: float(t.get("net_pnl", 0)), default=None)
+            worst = min(closed_week, key=lambda t: float(t.get("net_pnl", 0)), default=None)
+            notifier.send_weekly_summary(
+                week_pnl=week_pnl,
+                week_trades=len(closed_week),
+                week_wins=len(week_wins),
+                week_losses=len(week_losses),
+                options_pnl=opt_summary["total_options_pnl"],
+                account_value=risk.account_value,
+                starting_capital=account_value,
+                best_trade=best,
+                worst_trade=worst,
+            )
 
     # Sync final account value from broker (live mode) so saved state matches Zerodha
     final_value = risk.account_value

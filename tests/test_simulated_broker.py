@@ -71,8 +71,11 @@ def test_insufficient_capital_rejected(broker):
     assert broker.place_order(req).status == OrderStatus.REJECTED
 
 
-def test_sell_without_position_rejected(broker):
-    assert broker.place_order(sell()).status == OrderStatus.REJECTED
+def test_sell_without_position_opens_short(broker):
+    # SELL without an existing position now opens a short (paper short selling)
+    resp = broker.place_order(sell())
+    assert resp.status == OrderStatus.COMPLETE
+    assert broker.positions["RELIANCE"].side == "short"
 
 
 def test_charges_tracked(broker):

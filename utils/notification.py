@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +61,57 @@ class TelegramNotifier:
         )
 
     def send_daily_summary(self, report: dict):
+        opt_pnl = report.get("options_pnl", 0)
+        opt_trades = report.get("options_trades", 0)
+        opt_line = ""
+        if opt_trades > 0:
+            sign = "+" if opt_pnl >= 0 else ""
+            opt_line = f"\nOptions P&amp;L: Rs.{sign}{opt_pnl:,.0f}  ({opt_trades} trades)"
         self.send(
             f"[=] <b>DAILY SUMMARY</b>\n"
             f"Trades: {report.get('trades', 0)}  W:{report.get('wins', 0)} L:{report.get('losses', 0)}\n"
-            f"Net P&amp;L: Rs.{report.get('net_pnl', 0):+.2f}\n"
+            f"Win Rate: {report.get('win_rate', 0):.0f}%\n"
+            f"Equity P&amp;L: Rs.{report.get('net_pnl', 0):+,.0f}"
+            f"{opt_line}\n"
             f"Account: Rs.{report.get('account_value', 0):,.0f}"
+        )
+
+    def send_weekly_summary(self, week_pnl: float, week_trades: int,
+                            week_wins: int, week_losses: int,
+                            options_pnl: float, account_value: float,
+                            starting_capital: float,
+                            best_trade: dict = None, worst_trade: dict = None):
+        """Friday EOD — full week recap sent to Telegram."""
+        wr = round(week_wins / max(week_trades, 1) * 100)
+        total_return_pct = (account_value - starting_capital) / max(starting_capital, 1) * 100
+        combined_pnl = week_pnl + options_pnl
+
+        best_line = ""
+        if best_trade:
+            best_line = (f"\nBest trade : {best_trade.get('symbol', '?')} "
+                         f"Rs.{float(best_trade.get('net_pnl', 0)):+,.0f}")
+        worst_line = ""
+        if worst_trade:
+            worst_line = (f"\nWorst trade: {worst_trade.get('symbol', '?')} "
+                          f"Rs.{float(worst_trade.get('net_pnl', 0)):+,.0f}")
+
+        opt_line = ""
+        if options_pnl:
+            sign = "+" if options_pnl >= 0 else ""
+            opt_line = f"\nOptions P&amp;L : Rs.{sign}{options_pnl:,.0f}"
+
+        sign = "+" if combined_pnl >= 0 else ""
+        self.send(
+            f"<b>WEEKLY SUMMARY — w/e {datetime.now().strftime('%d %b %Y')}</b>\n"
+            f"--------------------\n"
+            f"Trades    : {week_trades}  (W:{week_wins} L:{week_losses}  WR:{wr}%)\n"
+            f"Equity P&amp;L : Rs.{week_pnl:+,.0f}"
+            f"{opt_line}\n"
+            f"Combined  : Rs.{sign}{combined_pnl:,.0f}\n"
+            f"Account   : Rs.{account_value:,.0f}  ({total_return_pct:+.1f}% all-time)"
+            f"{best_line}{worst_line}\n"
+            f"--------------------\n"
+            f"Next week: bot auto-starts Mon 9:00 AM IST"
         )
 
     def send_premarket_brief(self, regime: str, vix: float, account_value: float,

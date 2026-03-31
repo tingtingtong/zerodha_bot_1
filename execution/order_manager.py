@@ -52,11 +52,19 @@ class OrderManager:
             logger.warning(f"Duplicate entry blocked: {trade.symbol}")
             return False
 
-        # Round to 0.10 tick — satisfies both 0.05 and 0.10 tick stocks on NSE
-        raw = current_price * 1.002
-        limit_price = round(round(raw / 0.10) * 0.10, 2)
+        is_short = trade.direction == "short"
+        # Long: buy slightly above market; Short: sell slightly below market
+        if is_short:
+            raw = current_price * 0.998
+            limit_price = round(round(raw / 0.10) * 0.10, 2)
+            entry_side = OrderSide.SELL
+        else:
+            raw = current_price * 1.002
+            limit_price = round(round(raw / 0.10) * 0.10, 2)
+            entry_side = OrderSide.BUY
+
         req = OrderRequest(
-            symbol=trade.symbol, side=OrderSide.BUY,
+            symbol=trade.symbol, side=entry_side,
             quantity=trade.entry_qty, order_type=OrderType.LIMIT,
             product=ProductType.MIS, price=limit_price,
             tag=f"E_{trade.trade_id[:8]}",
@@ -100,11 +108,18 @@ class OrderManager:
         return False
 
     def _on_entry_filled(self, trade: TradeRecord, order_id: str, fill_price: float):
-        # If fill price is below the signal price, SL may now be above fill — fix it
-        if trade.stop_loss >= fill_price:
-            adjusted = round(fill_price * 0.99, 2)  # 1% below fill as fallback
-            logger.warning(f"SL {trade.stop_loss} >= fill {fill_price} — adjusting to {adjusted}")
-            trade.stop_loss = adjusted
+        if trade.direction == "short":
+            # Short: SL must be ABOVE fill price
+            if trade.stop_loss <= fill_price:
+                adjusted = round(fill_price * 1.01, 2)
+                logger.warning(f"Short SL {trade.stop_loss} <= fill {fill_price} — adjusting to {adjusted}")
+                trade.stop_loss = adjusted
+        else:
+            # Long: SL must be BELOW fill price
+            if trade.stop_loss >= fill_price:
+                adjusted = round(fill_price * 0.99, 2)
+                logger.warning(f"SL {trade.stop_loss} >= fill {fill_price} — adjusting to {adjusted}")
+                trade.stop_loss = adjusted
         trade.transition(
             TradeState.ENTRY_FILLED,
             entry_order_id=order_id,
@@ -117,16 +132,27 @@ class OrderManager:
         self._place_sl(trade)
 
     def _place_sl(self, trade: TradeRecord):
-        # Trigger must be strictly below fill price — guard against SL computed
-        # too close to entry (e.g. tiny ATR, fast-moving fill vs signal price)
-        safe_sl = min(trade.stop_loss, trade.entry_price - 0.20)
-        trigger = round(round(safe_sl / 0.10) * 0.10, 2)
-        # SL-M order: only trigger_price needed, no limit price
+        if trade.direction == "short":
+            # Short SL: trigger must be strictly ABOVE entry
+            safe_sl = max(trade.stop_loss, trade.entry_price + 0.20)
+            trigger = round(round(safe_sl / 0.10) * 0.10, 2)
+            sl_side = OrderSide.BUY
+            # Limit price: 0.5% ABOVE trigger (market protection for buy-stop)
+            limit_price = round(round(trigger * 1.005 / 0.10) * 0.10, 2)
+        else:
+            # Long SL: trigger must be strictly BELOW entry
+            safe_sl = min(trade.stop_loss, trade.entry_price - 0.20)
+            trigger = round(round(safe_sl / 0.10) * 0.10, 2)
+            sl_side = OrderSide.SELL
+            # Limit price: 0.5% BELOW trigger (market protection for sell-stop)
+            limit_price = round(round(trigger * 0.995 / 0.10) * 0.10, 2)
+
+        # Use SL_LIMIT (not SL-M) — Zerodha requires market protection from April 1 2026
         req = OrderRequest(
-            symbol=trade.symbol, side=OrderSide.SELL,
-            quantity=trade.remaining_qty, order_type=OrderType.SL,
+            symbol=trade.symbol, side=sl_side,
+            quantity=trade.remaining_qty, order_type=OrderType.SL_LIMIT,
             product=ProductType.MIS,
-            price=None,
+            price=limit_price,
             trigger_price=trigger,
             tag=f"SL_{trade.trade_id[:8]}",
         )
@@ -139,8 +165,15 @@ class OrderManager:
 
     def update_trailing_stop(self, trade_id: str, new_sl: float):
         trade = self.active_trades.get(trade_id)
-        if not trade or new_sl <= trade.stop_loss:
+        if not trade:
             return
+        # Long: new SL must be higher; Short: new SL must be lower
+        if trade.direction == "short":
+            if new_sl >= trade.stop_loss:
+                return
+        else:
+            if new_sl <= trade.stop_loss:
+                return
         if trade.sl_order_id:
             self.broker.cancel_order(trade.sl_order_id)
         trade.stop_loss = round(new_sl, 2)
@@ -152,14 +185,24 @@ class OrderManager:
         trade = self.active_trades.get(trade_id)
         if not trade or qty <= 0 or qty > trade.remaining_qty:
             return
+        if trade.direction == "short":
+            # Buy back to cover partial short; price slightly above market
+            limit_p = round(round(exit_price * 1.001 / 0.10) * 0.10, 2)
+            exit_side = OrderSide.BUY
+        else:
+            limit_p = round(round(exit_price * 0.999 / 0.10) * 0.10, 2)
+            exit_side = OrderSide.SELL
         req = OrderRequest(
-            symbol=trade.symbol, side=OrderSide.SELL, quantity=qty,
+            symbol=trade.symbol, side=exit_side, quantity=qty,
             order_type=OrderType.LIMIT, product=ProductType.MIS,
-            price=round(round(exit_price * 0.999 / 0.10) * 0.10, 2), tag=f"P_{trade.trade_id[:8]}",
+            price=limit_p, tag=f"P_{trade.trade_id[:8]}",
         )
         resp = self.broker.place_order(req)
         if resp.status == OrderStatus.COMPLETE:
-            pnl = (resp.avg_fill_price - trade.entry_price) * qty
+            if trade.direction == "short":
+                pnl = (trade.entry_price - resp.avg_fill_price) * qty
+            else:
+                pnl = (resp.avg_fill_price - trade.entry_price) * qty
             trade.partial_exits.append(
                 PartialExit(datetime.now(IST), qty, resp.avg_fill_price, reason, round(pnl, 2))
             )
@@ -174,8 +217,9 @@ class OrderManager:
         if not trade:
             return
         if trade.remaining_qty > 0:
+            close_side = OrderSide.BUY if trade.direction == "short" else OrderSide.SELL
             req = OrderRequest(
-                symbol=trade.symbol, side=OrderSide.SELL,
+                symbol=trade.symbol, side=close_side,
                 quantity=trade.remaining_qty, order_type=OrderType.MARKET,
                 product=ProductType.MIS, price=exit_price,
                 tag=f"X_{trade.trade_id[:8]}",
@@ -185,7 +229,10 @@ class OrderManager:
                 exit_price = resp.avg_fill_price
 
         partial_pnl = sum(pe.pnl for pe in trade.partial_exits)
-        remaining_pnl = (exit_price - trade.entry_price) * trade.remaining_qty
+        if trade.direction == "short":
+            remaining_pnl = (trade.entry_price - exit_price) * trade.remaining_qty
+        else:
+            remaining_pnl = (exit_price - trade.entry_price) * trade.remaining_qty
         gross_pnl = partial_pnl + remaining_pnl
         net_pnl = gross_pnl - charges
 
@@ -227,25 +274,35 @@ class OrderManager:
                 self.close_trade(tid, current_price, "time_exit")
                 continue
 
+            is_short = trade.direction == "short"
+
             # Target 2 — full exit
-            if current_price >= trade.target_2 and trade.is_open():
+            t2_hit = (current_price <= trade.target_2) if is_short else (current_price >= trade.target_2)
+            if t2_hit and trade.is_open():
                 self.close_trade(tid, current_price, "target_2_hit")
                 continue
 
             # Target 1 — partial exit
-            if (current_price >= trade.target_1
+            t1_hit = (current_price <= trade.target_1) if is_short else (current_price >= trade.target_1)
+            if (t1_hit
                     and trade.state not in (TradeState.TARGET_1_HIT,
                                             TradeState.BREAKEVEN_MOVED,
                                             TradeState.TRAILING_ACTIVE)):
                 half = max(1, trade.entry_qty // 2)
                 if half >= trade.entry_qty:
-                    half = trade.entry_qty  # exit full position if qty too small to split
+                    half = trade.entry_qty
                 self.partial_exit(tid, half, current_price, "target_1_hit")
                 trade.state = TradeState.TARGET_1_HIT
                 continue
 
             # Trailing SL update
-            if trade.state == TradeState.TRAILING_ACTIVE and current_price > trade.entry_price:
-                new_sl = round(current_price - trade.trailing_step, 2)
-                if new_sl > trade.stop_loss:
-                    self.update_trailing_stop(tid, new_sl)
+            if is_short:
+                if trade.state == TradeState.TRAILING_ACTIVE and current_price < trade.entry_price:
+                    new_sl = round(current_price + trade.trailing_step, 2)
+                    if new_sl < trade.stop_loss:
+                        self.update_trailing_stop(tid, new_sl)
+            else:
+                if trade.state == TradeState.TRAILING_ACTIVE and current_price > trade.entry_price:
+                    new_sl = round(current_price - trade.trailing_step, 2)
+                    if new_sl > trade.stop_loss:
+                        self.update_trailing_stop(tid, new_sl)
