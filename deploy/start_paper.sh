@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================
 # ZerodhaBot — Paper Mode Start Script (Cloud)
-# No Zerodha login required. Simulated broker only.
-# Runs bot from 9:00 AM to ~3:30 PM IST then exits.
+# Performs headless Zerodha login (requests + pyotp, no browser)
+# then runs the bot with Zerodha data provider.
 # ============================================================
 
 cd ~/zerodhaBot
@@ -14,13 +14,35 @@ mkdir -p journaling/logs
 
 echo "[$(date)] ==============================" >> "$LOG"
 echo "[$(date)] ZerodhaBot PAPER mode starting" >> "$LOG"
-echo "[$(date)] Capital: Rs.2,00,000 (simulated)" >> "$LOG"
 echo "[$(date)] ==============================" >> "$LOG"
 
-# Sync system clock (important for accurate timestamps)
+# Sync system clock (important for accurate timestamps and TOTP)
 sudo timedatectl set-ntp true 2>/dev/null || true
 
-# Run bot in paper mode — no login needed
+# ------------------------------------------------------------------
+# Headless Zerodha login (no Playwright/browser — works on GCP)
+# Skips automatically if today's token already exists
+# ------------------------------------------------------------------
+echo "[$(date)] Running headless login..." >> "$LOG"
+python brokers/zerodha_headless_login.py >> "$LOG" 2>&1
+LOGIN_CODE=$?
+
+if [ $LOGIN_CODE -ne 0 ]; then
+    echo "[$(date)] ERROR: Headless login failed (code $LOGIN_CODE). Aborting." >> "$LOG"
+    python -c "
+import sys; sys.path.insert(0,'.')
+try:
+    from dotenv import load_dotenv; load_dotenv()
+    from utils.notification import TelegramNotifier
+    TelegramNotifier().send('ZerodhaBot FAILED to start: Zerodha login error. Check logs.')
+except Exception: pass
+" 2>/dev/null || true
+    exit 1
+fi
+
+echo "[$(date)] Login OK. Starting bot..." >> "$LOG"
+
+# Run bot in paper mode with Zerodha data
 python main.py --mode paper >> "$LOG" 2>&1
 EXIT_CODE=$?
 
