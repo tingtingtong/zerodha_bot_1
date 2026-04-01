@@ -6,6 +6,7 @@ Commands:
   /start   — start the bot if not running
   /stop    — stop the bot gracefully
   /report  — today's P&L summary
+  /logs    — last 50 log lines (pass a number for more: /logs 100)
   /help    — list all commands
 
 Any other message is answered by Claude (claude-opus-4-6) with full bot context.
@@ -76,7 +77,6 @@ def is_bot_running() -> bool:
         return False
     try:
         pid = int(BOT_PID_FILE.read_text().strip())
-        # Check if process is alive (Windows)
         result = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
             capture_output=True, text=True
@@ -124,7 +124,6 @@ def get_status() -> str:
     status_icon = "🟢 Running" if running else "🔴 Stopped (next start: 8:55 AM)"
     today = datetime.now(IST).strftime("%Y-%m-%d")
 
-    # Last log line
     log_file = ROOT / "journaling" / "logs" / f"bot_{today}.log"
     last_log = "No log for today yet"
     if log_file.exists():
@@ -132,7 +131,6 @@ def get_status() -> str:
         if lines:
             last_log = lines[-1].split("|")[-1].strip() if "|" in lines[-1] else lines[-1]
 
-    # Account — prefer account_state.json, fall back to today's report
     account_val = "N/A"
     daily_pnl   = "N/A"
     regime_line = ""
@@ -186,7 +184,6 @@ def _format_report(r: dict, label: str) -> str:
 
 
 def _load_report(date_str: str):
-    """Load a report JSON for a given YYYY-MM-DD date. Returns dict or None."""
     f = ROOT / "journaling" / "reports" / f"report_{date_str}.json"
     if f.exists():
         try:
@@ -200,14 +197,12 @@ def get_report(date_arg: str = "") -> str:
     reports_dir = ROOT / "journaling" / "reports"
     today = datetime.now(IST).strftime("%Y-%m-%d")
 
-    # /report YYYY-MM-DD — specific date
     if date_arg:
         r = _load_report(date_arg)
         if r:
             return _format_report(r, f"REPORT ({date_arg})")
         return f"📋 No report found for {date_arg}."
 
-    # /report — today, fallback to most recent
     r = _load_report(today)
     if r:
         return _format_report(r, "TODAY'S REPORT")
@@ -219,7 +214,6 @@ def get_report(date_arg: str = "") -> str:
         if r:
             return _format_report(r, f"LAST REPORT ({date_str})")
 
-    # No reports at all
     account_file = ROOT / "journaling" / "account_state.json"
     account_val, daily_pnl = "N/A", "N/A"
     if account_file.exists():
@@ -240,7 +234,6 @@ def get_report(date_arg: str = "") -> str:
 
 
 def get_report_summary(days: list) -> str:
-    """Aggregate multiple days of reports into one summary."""
     reports_dir = ROOT / "journaling" / "reports"
     if not reports_dir.exists():
         return "📋 No reports available."
@@ -279,12 +272,11 @@ def get_report_summary(days: list) -> str:
 def get_last_week_report() -> str:
     from datetime import timedelta
     today = datetime.now(IST).date()
-    # Mon–Fri of last calendar week
-    days_back = today.weekday() + 7  # go back to last Monday
+    days_back = today.weekday() + 7
     last_mon = today - timedelta(days=days_back)
     dates = [
         (last_mon + timedelta(days=i)).strftime("%Y-%m-%d")
-        for i in range(5)  # Mon to Fri
+        for i in range(5)
     ]
     return get_report_summary(dates)
 
@@ -298,10 +290,36 @@ def get_last_month_report() -> str:
     dates = []
     d = first_day_prev
     while d <= last_day_prev:
-        if d.weekday() < 5:  # Mon–Fri only
+        if d.weekday() < 5:
             dates.append(d.strftime("%Y-%m-%d"))
         d += timedelta(days=1)
     return get_report_summary(dates)
+
+
+def get_logs(n: int = 50) -> str:
+    """Return last n lines of today's bot log, trimmed to fit Telegram 4096-char limit."""
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+    log_file = ROOT / "journaling" / "logs" / f"bot_{today}.log"
+    if not log_file.exists():
+        return f"📄 No log file for today ({today}) yet."
+    try:
+        lines = [l.rstrip() for l in log_file.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
+        tail = lines[-n:]
+        clean = []
+        for l in tail:
+            parts = l.split("|")
+            if len(parts) >= 3:
+                lvl = parts[1].strip()[:7]
+                msg = "|".join(parts[2:]).strip()
+                clean.append(f"{lvl}: {msg}")
+            else:
+                clean.append(l)
+        text = "\n".join(clean)
+        if len(text) > 3800:
+            text = "...(trimmed)\n" + text[-3800:]
+        return f"📄 <b>Last {len(tail)} lines ({today}):</b>\n<pre>{text}</pre>"
+    except Exception as e:
+        return f"Error reading log: {e}"
 
 
 HELP_TEXT = (
@@ -316,6 +334,8 @@ HELP_TEXT = (
     "/report 2026-03-25   — report for a specific date\n"
     "/lastweek            — last week's summary\n"
     "/lastmonth           — last month's summary\n"
+    "/logs                — last 50 log lines\n"
+    "/logs 100            — last 100 log lines\n"
     "/help                — this message\n"
     "——————————————————\n"
     "💬 Or just <b>type anything</b> to ask Claude about the bot!"
@@ -340,7 +360,6 @@ Keep responses concise. No markdown — use plain text since this is Telegram.""
 
 
 def build_bot_context() -> str:
-    """Snapshot of current bot state prepended to every agent prompt."""
     today = datetime.now(IST).strftime("%Y-%m-%d")
     lines = [f"[Bot snapshot — {datetime.now(IST).strftime('%I:%M %p IST, %d %b %Y')}]"]
     lines.append(f"Bot running: {is_bot_running()}")
@@ -373,7 +392,6 @@ def build_bot_context() -> str:
 
 
 def ask_claude(user_message: str) -> str:
-    """Answer a free-form question via claude CLI with live bot context."""
     try:
         prompt = (
             f"{AGENT_SYSTEM_PROMPT}\n\n"
@@ -402,7 +420,8 @@ def ask_claude(user_message: str) -> str:
 
 def handle(text: str):
     if text.startswith("/"):
-        cmd = text.strip().lower().split()[0]
+        parts = text.strip().split()
+        cmd = parts[0].lower()
         if cmd == "/status":
             send(get_status())
         elif cmd in ("/start", "/runlive"):
@@ -415,19 +434,25 @@ def handle(text: str):
             msg = stop_bot()
             send(f"{'✅' if 'stopped' in msg else '⚠️'} {msg}")
         elif cmd == "/report":
-            parts = text.strip().split()
             date_arg = parts[1] if len(parts) > 1 else ""
             send(get_report(date_arg))
         elif cmd == "/lastweek":
             send(get_last_week_report())
         elif cmd == "/lastmonth":
             send(get_last_month_report())
+        elif cmd == "/logs":
+            n = 50
+            if len(parts) > 1:
+                try:
+                    n = max(10, min(200, int(parts[1])))
+                except ValueError:
+                    pass
+            send(get_logs(n))
         elif cmd == "/help":
             send(HELP_TEXT)
         else:
             send(f"Unknown command: <code>{text[:40]}</code>\nSend /help for available commands.")
     else:
-        # Free-form message — ask Claude (single reply)
         reply = ask_claude(text)
         send(reply)
 
@@ -437,7 +462,6 @@ def handle(text: str):
 def run():
     logger.info("Telegram Commander started. Listening for commands...")
 
-    # Drain any messages that arrived while the bot was offline — don't replay them
     offset = 0
     stale = get_updates(offset)
     if stale:
@@ -462,7 +486,6 @@ def run():
 
 
 if __name__ == "__main__":
-    # Single-instance lock — exit immediately if another commander is already running
     lock_file = ROOT / "journaling" / "commander.pid"
     lock_file.parent.mkdir(parents=True, exist_ok=True)
     if lock_file.exists():

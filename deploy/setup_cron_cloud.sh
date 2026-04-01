@@ -4,22 +4,26 @@
 # Oracle Cloud / Google Cloud Ubuntu VM
 #
 # Cron times are in UTC. IST = UTC+5:30
-#   9:00 AM IST = 3:30 AM UTC
+#   3:00 AM UTC = 8:30 AM IST  — git pull (auto-deploy)
+#   3:30 AM UTC = 9:00 AM IST  — start bot
 # ============================================================
 
-SCRIPT="$HOME/zerodhaBot/deploy/start_paper.sh"
-chmod +x "$SCRIPT"
+START_SCRIPT="$HOME/zerodhaBot/deploy/start_paper.sh"
+DEPLOY_SCRIPT="$HOME/zerodhaBot/deploy/auto_deploy.sh"
+chmod +x "$START_SCRIPT"
 
 # Remove any existing ZerodhaBot cron entries
-crontab -l 2>/dev/null | grep -v "zerodhaBot" | crontab - 2>/dev/null || true
+crontab -l 2>/dev/null | grep -v "zerodhaBot\|auto_deploy\|start_paper\|start_bot" | crontab - 2>/dev/null || true
 
-# Add new cron entry: 3:30 AM UTC = 9:00 AM IST, weekdays only (Mon-Fri)
-(crontab -l 2>/dev/null; echo "30 3 * * 1-5 bash $SCRIPT >> $HOME/zerodhaBot/logs/cron.log 2>&1") | crontab -
+# 1) Auto-deploy: pull latest code at 3:00 AM UTC (8:30 AM IST), Mon-Fri
+(crontab -l 2>/dev/null; echo "0 3 * * 1-5 bash $DEPLOY_SCRIPT >> $HOME/zerodhaBot/journaling/logs/deploy.log 2>&1") | crontab -
 
-echo "Cron job set:"
-crontab -l | grep zerodhaBot
+# 2) Start bot: 3:30 AM UTC (9:00 AM IST), Mon-Fri
+(crontab -l 2>/dev/null; echo "30 3 * * 1-5 bash $START_SCRIPT >> $HOME/zerodhaBot/journaling/logs/cron.log 2>&1") | crontab -
 
+echo "Cron jobs set:"
+crontab -l | grep -E "auto_deploy|start_paper"
 echo ""
-echo "Bot will auto-start at 9:00 AM IST (3:30 AM UTC) every weekday."
-echo "To verify: crontab -l"
-echo "To check logs: tail -f ~/zerodhaBot/journaling/logs/bot_\$(date +%Y-%m-%d).log"
+echo "Schedule (IST):"
+echo "  8:30 AM — git pull (auto-deploy latest code)"
+echo "  9:00 AM — bot starts"
