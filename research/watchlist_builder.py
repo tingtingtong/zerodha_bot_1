@@ -107,7 +107,7 @@ class WatchlistBuilder:
         # Always build watchlist — mean_reversion strategy needs candidates even in bear/sideways
         # regime_bullish flag is passed per-strategy so each strategy decides for itself
 
-        from_date = datetime.now(IST) - timedelta(days=90)
+        from_date = datetime.now(IST) - timedelta(days=120)
         to_date = datetime.now(IST)
         scores: List[StockScore] = []
 
