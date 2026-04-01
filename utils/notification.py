@@ -208,3 +208,92 @@ class TelegramNotifier:
             f"<b>Open Positions:</b>\n{open_lines}"
             f"{steps_lines}"
         )
+
+    def send_error_alert(self, error: str, log_path: str = "", last_n: int = 30):
+        """Send crash/error alert with last N log lines."""
+        lines_text = ""
+        if log_path:
+            try:
+                from pathlib import Path
+                all_lines = [l.rstrip() for l in Path(log_path).read_text(
+                    encoding="utf-8", errors="replace").splitlines() if l.strip()]
+                tail = all_lines[-last_n:]
+                clean = []
+                for l in tail:
+                    parts = l.split("|")
+                    if len(parts) >= 3:
+                        lvl = parts[1].strip()[:7]
+                        msg = "|".join(parts[2:]).strip()
+                        clean.append(f"{lvl}: {msg}")
+                    else:
+                        clean.append(l)
+                lines_text = "\n<b>Last log lines:</b>\n<pre>" + "\n".join(clean) + "</pre>"
+                if len(lines_text) > 3000:
+                    lines_text = "\n<b>Last log lines:</b>\n<pre>...(trimmed)\n" + "\n".join(clean[-15:]) + "</pre>"
+            except Exception:
+                pass
+
+        self.send(
+            f"🚨 <b>ZerodhaBot ERROR</b>\n"
+            f"--------------------\n"
+            f"<code>{error[:300]}</code>"
+            f"{lines_text}"
+        )
+
+    def send_eod_log_digest(self, log_path: str, trades: int, net_pnl: float):
+        """Send EOD digest of warnings/errors from today's log."""
+        try:
+            from pathlib import Path
+            all_lines = [l.rstrip() for l in Path(log_path).read_text(
+                encoding="utf-8", errors="replace").splitlines() if l.strip()]
+        except Exception:
+            return
+
+        warnings = [l for l in all_lines if "| WARNING  |" in l or "| ERROR    |" in l or "| CRITICAL |" in l]
+        errors   = [l for l in all_lines if "| ERROR    |" in l or "| CRITICAL |" in l]
+
+        if not warnings:
+            self.send(
+                f"✅ <b>EOD Log Digest</b>\n"
+                f"--------------------\n"
+                f"No warnings or errors today.\n"
+                f"Trades: {trades}  |  Net P&amp;L: Rs.{net_pnl:+.2f}"
+            )
+            return
+
+        # Show last 20 unique warnings, deduplicated by message content
+        seen = set()
+        deduped = []
+        for l in reversed(warnings):
+            parts = l.split("|")
+            key = "|".join(parts[2:]).strip()[:80] if len(parts) >= 3 else l[:80]
+            if key not in seen:
+                seen.add(key)
+                deduped.append(l)
+            if len(deduped) >= 20:
+                break
+        deduped.reverse()
+
+        clean = []
+        for l in deduped:
+            parts = l.split("|")
+            if len(parts) >= 3:
+                lvl = parts[1].strip()[:4]
+                msg = "|".join(parts[2:]).strip()[:120]
+                clean.append(f"{lvl}: {msg}")
+            else:
+                clean.append(l[:120])
+
+        digest = "\n".join(clean)
+        if len(digest) > 2800:
+            digest = "...(trimmed)\n" + digest[-2800:]
+
+        icon = "🔴" if errors else "🟡"
+        self.send(
+            f"{icon} <b>EOD Log Digest</b>\n"
+            f"--------------------\n"
+            f"Warnings: {len(warnings)}  |  Errors: {len(errors)}\n"
+            f"Trades: {trades}  |  Net P&amp;L: Rs.{net_pnl:+.2f}\n"
+            f"--------------------\n"
+            f"<pre>{digest}</pre>"
+        )

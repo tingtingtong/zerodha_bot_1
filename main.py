@@ -695,6 +695,15 @@ def main():
     if config["notifications"]["enabled"]:
         notifier.send_daily_summary(report)
 
+        # EOD log digest — warnings/errors from today's log
+        today_str = now_ist().strftime("%Y-%m-%d")
+        log_path = str(ROOT / config["bot"].get("log_dir", "journaling/logs") / f"bot_{today_str}.log")
+        notifier.send_eod_log_digest(
+            log_path=log_path,
+            trades=report.get("trades", 0),
+            net_pnl=report.get("net_pnl", 0.0),
+        )
+
         # Weekly summary every Friday
         if now_ist().weekday() == 4:  # 4 = Friday
             import json as _json
@@ -749,4 +758,25 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import traceback
+    from datetime import datetime as _dt
+    from pathlib import Path as _Path
+    import pytz as _pytz
+    _IST = _pytz.timezone("Asia/Kolkata")
+
+    try:
+        main()
+    except Exception as _exc:
+        # Unhandled crash — send error alert with recent logs before dying
+        _today = _dt.now(_IST).strftime("%Y-%m-%d")
+        _log_path = str(_Path("journaling/logs") / f"bot_{_today}.log")
+        try:
+            from utils.notification import TelegramNotifier
+            TelegramNotifier().send_error_alert(
+                error=f"UNHANDLED CRASH:\n{traceback.format_exc()[-600:]}",
+                log_path=_log_path,
+                last_n=30,
+            )
+        except Exception:
+            pass
+        raise
