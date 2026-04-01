@@ -86,11 +86,23 @@ class WatchlistBuilder:
         config = config or {}
         event_set = set(event_symbols or [])
         max_size = config.get("max_watchlist_size", 10)
-        min_score = config.get("min_score_for_watchlist", 60)
+        base_min_score = config.get("min_score_for_watchlist", 60)
         universe_size = config.get("universe_size", 50)
 
         regime = self.regime_detector.detect(nifty_daily, vix=vix)
         logger.info(f"Regime: {regime.regime.value} | Rec: {regime.recommendation} | VIX: {vix:.1f}")
+
+        # Lower scoring threshold in bear conditions — stocks below EMAs with low RSI
+        # can never reach the bullish-market threshold of 60
+        regime_str = regime.regime.value if hasattr(regime.regime, "value") else str(regime.regime)
+        if "strong_bear" in regime_str or regime_str == "bear":
+            min_score = min(base_min_score, 40)
+        elif "weak_bear" in regime_str:
+            min_score = min(base_min_score, 48)
+        elif "sideways" in regime_str:
+            min_score = min(base_min_score, 54)
+        else:
+            min_score = base_min_score
 
         # Always build watchlist — mean_reversion strategy needs candidates even in bear/sideways
         # regime_bullish flag is passed per-strategy so each strategy decides for itself
@@ -127,6 +139,22 @@ class WatchlistBuilder:
 
         qualified = sorted([s for s in scores if s.total_score >= min_score],
                            key=lambda x: x.total_score, reverse=True)[:max_size]
+
+        # Always log top candidates for diagnostics, even if none qualify
+        all_scored = sorted([s for s in scores if s.total_score > 0],
+                            key=lambda x: x.total_score, reverse=True)
+        if all_scored:
+            top = all_scored[:5]
+            top_str = ", ".join(
+                f"{s.symbol}:{s.total_score:.0f}(rsi{s.rsi_14:.0f})" for s in top
+            )
+            logger.info(f"Top scores [threshold={min_score}]: {top_str}")
+        else:
+            rejected = [s for s in scores if s.rejection_reason]
+            reasons = {}
+            for s in rejected:
+                reasons[s.rejection_reason] = reasons.get(s.rejection_reason, 0) + 1
+            logger.info(f"All {len(rejected)} stocks rejected before scoring. Reasons: {reasons}")
 
         watchlist = [
             WatchlistEntry(
