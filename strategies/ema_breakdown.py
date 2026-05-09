@@ -29,11 +29,13 @@ class EMABreakdownStrategy(BaseStrategy):
 
     EMA_FAST = 9
     EMA_SLOW = 21
-    MIN_VOL_MULT = 1.5
-    MIN_RR = 1.5
+    MIN_VOL_MULT = 2.0     # Raised — need real volume spike on rejection (was 1.0)
+    MIN_RR = 1.8           # Raised — shorts need better reward to justify risk (was 1.5)
     MAX_HOLD_CANDLES = 16
+    T1_MULT = 1.5          # target_1 cover = entry - rps * T1_MULT
+    T2_MULT = 2.5          # target_2 cover = entry - rps * T2_MULT
     NO_TRADE_BEFORE = "09:45"
-    NO_TRADE_AFTER = "14:45"
+    NO_TRADE_AFTER = "13:30"  # No new shorts after 1:30 PM — too close to close (was 14:45)
 
     @property
     def strategy_name(self) -> str:
@@ -75,31 +77,32 @@ class EMABreakdownStrategy(BaseStrategy):
         if cur >= ema9[-1]:
             return self._no_trade(symbol, "price_above_ema9")
 
-        # EMA9 must be falling (slope negative over last 3 candles)
-        if ema9[-1] >= ema9[-3]:
-            return self._no_trade(symbol, "ema9_not_falling")
+        # EMA9 must be falling for at least 5 candles (confirmed downtrend, not a blip)
+        if ema9[-1] >= ema9[-5]:
+            return self._no_trade(symbol, "ema9_not_falling_5c")
 
-        # Daily trend filter: stock must be below its 20-day EMA (macro downtrend)
+        # Daily trend filter: stock must be AT or BELOW its 20-day EMA — confirmed macro downtrend
+        # Removed the old 5% buffer — that was allowing shorts on stocks still in uptrends
         if df_daily is not None and len(df_daily) >= 22:
             daily_c = df_daily["close"].values
             d_ema20 = self._ema(daily_c, 20)
             if daily_c[-1] > d_ema20[-1]:
-                return self._no_trade(symbol, "above_daily_ema20")
+                return self._no_trade(symbol, "above_daily_ema20_no_shorts")
 
-        # Rejection: high touched EMA9 in last 5 candles AND current price is below EMA9
+        # Rejection: high touched EMA9 in last 5 candles (fresh setup only, not stale)
         rejection = (cur < ema9[-1]) and any(
             h[-i] >= ema9[-i] * 0.995 for i in range(2, 6) if i < len(h)
         )
         if not rejection:
-            return self._no_trade(symbol, "no_rejection")
+            return self._no_trade(symbol, "no_rejection_5c")
 
         # Current close must be below EMA9 (rejection confirmed, not just approaching)
         if c[-1] >= ema9[-1]:
             return self._no_trade(symbol, "rejection_candle_above_ema9")
 
         rsi = self._rsi(c, 14)
-        if rsi > 45:
-            return self._no_trade(symbol, f"rsi_above_45_{rsi:.1f}")
+        if rsi > 38:
+            return self._no_trade(symbol, f"rsi_above_38_{rsi:.1f}")  # was 45, too loose
         if rsi < 15:
             return self._no_trade(symbol, f"rsi_extreme_{rsi:.1f}_possible_gap_down")
 
@@ -117,8 +120,8 @@ class EMABreakdownStrategy(BaseStrategy):
         if rps <= 0.01:
             return self._no_trade(symbol, "invalid_sl")
 
-        t1 = cur - rps * 1.5
-        t2 = cur - rps * 2.5
+        t1 = cur - rps * self.T1_MULT
+        t2 = cur - rps * self.T2_MULT
         be = cur - rps * 1.0  # breakeven trigger (move SL to entry when T1 hit)
         qty = int(capital_per_trade / cur)
 
@@ -146,3 +149,18 @@ class EMABreakdownStrategy(BaseStrategy):
             max_hold_candles=self.MAX_HOLD_CANDLES,
             strategy_name=self.strategy_name, is_valid=True,
         )
+
+
+def _load_optimized_params():
+    import json, os
+    f = os.path.join(os.path.dirname(__file__), "..", "backtesting", "results", "best_params.json")
+    if os.path.exists(f):
+        try:
+            params = json.loads(open(f).read()).get("ema_breakdown", {})
+            for k, v in params.items():
+                if hasattr(EMABreakdownStrategy, k):
+                    setattr(EMABreakdownStrategy, k, v)
+        except Exception:
+            pass
+
+_load_optimized_params()

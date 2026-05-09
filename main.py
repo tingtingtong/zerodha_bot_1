@@ -219,6 +219,7 @@ def main():
         ca_summary = load_into_calendar(
             event_cal,
             lookahead_days=config["market_research"].get("avoid_event_within_days", 7),
+            cache_dir=config["data"].get("cache_dir", ".cache/market_data"),
         )
         if ca_summary["symbols"]:
             logger.info(
@@ -229,6 +230,39 @@ def main():
     except Exception as e:
         logger.warning(f"NSE corporate actions fetch failed (non-critical): {e}")
 
+    # ── News sentiment ─────────────────────────────────────────────
+    sentiment_map = {}
+    if config["market_research"].get("news_sentiment_enabled", True):
+        try:
+            from research.news_sentiment import fetch_news_sentiment
+            from research.watchlist_builder import NIFTY_200
+            candidate_syms = list(config["market_research"].get("preferred_symbols", [])) + NIFTY_200[:50]
+            sentiment_map = fetch_news_sentiment(
+                symbols=list(dict.fromkeys(candidate_syms)),  # deduplicate, preserve order
+                cache_dir=config["data"].get("cache_dir", ".cache/market_data"),
+                cache_ttl_minutes=config["market_research"].get("sentiment_cache_ttl_minutes", 30),
+                negative_threshold=config["market_research"].get("sentiment_negative_threshold", -0.3),
+                positive_threshold=config["market_research"].get("sentiment_positive_boost", 0.4),
+            )
+        except Exception as e:
+            logger.warning(f"News sentiment fetch failed (non-critical): {e}")
+
+    # ── Screener fundamentals ──────────────────────────────────────
+    fundamentals_map = {}
+    if config["market_research"].get("screener_fundamentals_enabled", True):
+        try:
+            from research.screener_fundamentals import fetch_fundamentals
+            fundamentals_map = fetch_fundamentals(
+                symbols=list(config["market_research"].get("preferred_symbols", [])),
+                cache_dir=config["data"].get("cache_dir", ".cache/market_data"),
+                cache_ttl_hours=config["market_research"].get("fundamentals_cache_ttl_hours", 24),
+                max_debt_equity=config["market_research"].get("screener_max_debt_equity", 0.5),
+                min_promoter_holding_pct=config["market_research"].get("screener_min_promoter_pct", 50.0),
+                require_positive_earnings=config["market_research"].get("screener_require_positive_earnings", True),
+            )
+        except Exception as e:
+            logger.warning(f"Screener fundamentals fetch failed (non-critical): {e}")
+
     event_symbols = event_cal.get_event_symbols_today(
         within_days=config["market_research"].get("avoid_event_within_days", 3)
     )
@@ -238,6 +272,8 @@ def main():
         vix=vix,
         config=config["market_research"],
         event_symbols=list(event_symbols),
+        sentiment_map=sentiment_map,
+        fundamentals_map=fundamentals_map,
     )
 
     audit.log_regime(regime.regime.value, vix, regime.recommendation)
@@ -293,7 +329,12 @@ def main():
             next_trading_day=next_trading_day(),
         )
 
-    if regime.recommendation == "stay_flat":
+    hard_stay_flat = (
+        regime.regime.value == "strong_bear" or
+        vix >= vix_halt or
+        regime.regime.value == "high_volatility"
+    )
+    if hard_stay_flat:
         logger.info("Regime: STAY FLAT today. Bot will monitor but not trade.")
         if config["notifications"]["enabled"]:
             notifier.send(
@@ -301,7 +342,9 @@ def main():
                 f"Regime: {regime.regime.value.upper()}  |  VIX: {vix:.1f}\n"
                 f"No trades today. Updates every 15 mins will follow."
             )
-        # Stay-flat monitoring loop — sends 15-min updates, exits at market close
+        # Track whether VIX (not regime) caused the stay-flat, for auto-restart logic
+        vix_caused_stay_flat = vix >= vix_halt
+        # Stay-flat monitoring loop — sends hourly updates, exits at market close
         last_status_slot = -1
         hourly_steps = []
         while True:
@@ -327,7 +370,7 @@ def main():
                         f"Account: Rs.{account_value:,.0f}"
                     )
                 break
-            cur_slot = now.hour * 4 + now.minute // 15  # changes every 15 mins
+            cur_slot = now.hour
             if config["notifications"]["enabled"] and cur_slot != last_status_slot:
                 last_status_slot = cur_slot
                 hourly_steps = []
@@ -348,18 +391,18 @@ def main():
                 # VIX gate reasoning
                 if vix >= 20:
                     hourly_steps.append(f"🚫 VIX {vix:.1f} >= 20 — trading halted (threshold: 20)")
-                # Re-check regime — exit stay-flat if VIX has dropped enough
-                if vix < 25:
-                    logger.info(f"VIX dropped to {vix:.1f} — re-evaluating regime, restarting bot.")
+                # Only restart if VIX was the original cause of stay-flat AND has since recovered
+                if vix_caused_stay_flat and vix < vix_halt:
+                    logger.info(f"VIX recovered to {vix:.1f} (was above halt threshold) — restarting bot.")
                     if config["notifications"]["enabled"]:
                         notifier.send(
-                            f"VIX dropped to {vix:.1f} — conditions improved.\n"
+                            f"VIX recovered to {vix:.1f} — conditions improved.\n"
                             f"Restarting bot to scan for trades."
                         )
                     sys.exit(0)  # watchdog will restart the bot fresh
                 # Regime gate reasoning
-                if regime.recommendation == "stay_flat":
-                    hourly_steps.append(f"🚫 Regime not bullish — no signal scan performed")
+                if hard_stay_flat:
+                    hourly_steps.append(f"🚫 {regime.regime.value.upper()} / VIX {vix:.1f} — no signal scan")
                 hourly_steps.append(f"💤 Bot in STAY FLAT mode — no orders placed")
                 notifier.send_hourly_status(
                     hour=now.strftime("%I:%M %p IST"),
@@ -372,11 +415,47 @@ def main():
                     kill_switch=False,
                     steps=hourly_steps,
                 )
-                logger.info(f"Stay-flat 15-min status sent at {now.strftime('%H:%M')}")
+                logger.info(f"Stay-flat hourly status sent at {now.strftime('%H:%M')}")
             time.sleep(60)
         return
 
     regime_bullish = regime.regime.value in ("strong_bull", "weak_bull")
+
+    # ── Regime-based strategy gate ─────────────────────────────────
+    # Only run strategies that suit today's market regime.
+    # ORB works in ANY regime — morning breakout doesn't need a trend.
+    # Bull        → EMAPullback + ORB + MeanReversion
+    # Sideways    → ORB only  (MeanReversion disabled — consistently loses in ranging markets)
+    # Bear        → EMABreakdown + ORB
+    # High-vol    → ORB only  (directional EMA strategies too risky)
+    _REGIME_ALLOWED = {
+        "strong_bull":     {"EMAPullback", "ORB", "MeanReversion"},
+        "weak_bull":       {"EMAPullback", "ORB", "MeanReversion"},
+        "sideways":        {"ORB"},
+        "weak_bear":       {"EMABreakdown", "ORB"},
+        "strong_bear":     {"EMABreakdown", "ORB"},
+        "high_volatility": {"ORB"},
+    }
+    _allowed = _REGIME_ALLOWED.get(regime.regime.value, {"ORB"})
+    _gated   = [s for s in strategies if s.strategy_name not in _allowed]
+    strategies = [s for s in strategies if s.strategy_name in _allowed]
+    if _gated:
+        gated_names = [s.strategy_name for s in _gated]
+        active_names = [s.strategy_name for s in strategies]
+        logger.info(
+            f"Regime gate [{regime.regime.value.upper()}]: "
+            f"ACTIVE={active_names}  DISABLED={gated_names}"
+        )
+        notifier.send(
+            f"📊 Regime Gate\n"
+            f"Market: {regime.regime.value.upper()}\n"
+            f"Active: {', '.join(active_names)}\n"
+            f"Disabled: {', '.join(gated_names)}\n"
+            f"(EMA strategies need trending markets)"
+        )
+    else:
+        logger.info(f"Regime gate [{regime.regime.value.upper()}]: all strategies active")
+
     rejected_trades = []
     force_exit_time = config["strategy"].get("force_exit_ist", "15:15")
     last_status_slot = -1
@@ -448,7 +527,11 @@ def main():
             type("C", (), {"symbol": s, "price": 0, "score": 1.0})()
             for s in etf_symbols if s not in active_symbols_set
         ]
-        all_candidates = list(active_candidates) + etf_candidates
+        # In bear/sideways — also scan low-RSI stocks that bear strategies need
+        bear_candidates = watchlist_builder.bear_candidates if not regime_bullish else []
+        bear_syms = {c.symbol for c in active_candidates}
+        bear_extra = [c for c in bear_candidates if c.symbol not in bear_syms]
+        all_candidates = list(active_candidates) + bear_extra + etf_candidates
 
         for candidate in all_candidates:
             sym = candidate.symbol
@@ -504,10 +587,12 @@ def main():
                         "reason": setup.rejection_reason, "time": now.isoformat(),
                     })
                     hourly_steps.append(f"🔍 {sym} [{strategy.strategy_name}] — no signal ({setup.rejection_reason})")
+                    logger.debug(f"NO_SIGNAL: {sym} [{strategy.strategy_name}] — {setup.rejection_reason}")
                     continue
 
                 hourly_steps.append(f"✨ {sym} [{strategy.strategy_name}] — signal found! Grade {setup.setup_quality}, RR {setup.reward_risk_ratio:.1f}")
                 audit.log_signal(sym, strategy.strategy_name, setup.setup_quality, setup.reason)
+                logger.info(f"SIGNAL: {sym} [{strategy.strategy_name}] grade={setup.setup_quality} entry={setup.entry_price:.2f} sl={setup.stop_loss:.2f} rr={setup.reward_risk_ratio:.1f}")
 
                 risk_check = risk.check_trade(
                     symbol=sym,
@@ -522,6 +607,7 @@ def main():
 
                 audit.log_risk_decision(sym, risk_check.decision.value,
                                          risk_check.reason, risk_check.adjusted_qty)
+                logger.info(f"RISK {risk_check.decision.value.upper()}: {sym} — {risk_check.reason} qty={risk_check.adjusted_qty}")
 
                 if risk_check.decision.value != "approved":
                     hourly_steps.append(f"🚫 {sym} risk check REJECTED — {risk_check.reason}")
@@ -627,8 +713,8 @@ def main():
         # Save account state
         journal.save_account_state(risk.account_value, risk.daily_pnl)
 
-        # ── 15-min status report ──────────────────────────────────
-        cur_slot = now.hour * 4 + now.minute // 15
+        # ── Hourly status report ──────────────────────────────────
+        cur_slot = now.hour
         if config["notifications"]["enabled"] and cur_slot != last_status_slot:
             last_status_slot = cur_slot
             open_trades_info = [
@@ -638,6 +724,16 @@ def main():
                     "unrealised_pnl": (getattr(t, "current_price", t.entry_price) - t.entry_price) * t.entry_qty,
                 }
                 for t in order_mgr.active_trades.values()
+            ]
+            completed_trades_info = [
+                {
+                    "symbol": t.symbol,
+                    "strategy": t.strategy,
+                    "direction": getattr(t, "direction", "long"),
+                    "net_pnl": getattr(t, "net_pnl", 0) or 0,
+                    "state": t.state.value if hasattr(t.state, "value") else str(t.state),
+                }
+                for t in order_mgr.completed_trades
             ]
             # Add summary step if nothing notable happened
             if not hourly_steps:
@@ -652,9 +748,10 @@ def main():
                 trades_today=len(order_mgr.completed_trades),
                 kill_switch=risk.kill_switch_active,
                 steps=hourly_steps,
+                completed_trades=completed_trades_info,
             )
             hourly_steps = []  # reset for next hour
-            logger.info(f"15-min status report sent at {now.strftime('%H:%M')}")
+            logger.info(f"Hourly status report sent at {now.strftime('%H:%M')}")
 
         # Sleep until next 15-min candle
         sleep_seconds = 60  # Check every minute; adapt to 15-min in production

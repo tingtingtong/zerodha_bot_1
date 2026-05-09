@@ -22,11 +22,13 @@ logger = logging.getLogger(__name__)
 
 class MeanReversionStrategy(BaseStrategy):
 
-    MIN_RR = 1.3          # Lower bar — moves are counter-trend, shorter
+    MIN_RR = 1.5          # Raised — only take high-conviction bounces
     MAX_HOLD_CANDLES = 8  # 2 hours max — get in, get out
-    RSI_OVERSOLD = 35     # raised threshold — genuine oversold only (was 45)
+    RSI_OVERSOLD = 35     # Stricter — genuine oversold only (was 40, too loose)
     RSI_MAX = 50          # Don't enter if already recovered too much
-    VOLUME_MIN = 1.5      # raised from 1.3 — need real demand surge to confirm bounce
+    VOLUME_MIN = 1.5      # Raised — need clear volume confirmation (was 1.0)
+    T1_MULT = 1.2          # target_1 = entry + rps * T1_MULT
+    T2_MULT = 1.8          # target_2 = max(ema20, entry + rps * T2_MULT)
 
     @property
     def strategy_name(self) -> str:
@@ -91,8 +93,8 @@ class MeanReversionStrategy(BaseStrategy):
             return self._no_trade(symbol, "invalid_sl")
 
         # Target: T1 = quick 1.2x, T2 = mean (20 EMA)
-        t1 = cur + rps * 1.2
-        t2 = max(ema20[-1], cur + rps * 1.8)  # at least 1.8x, ideally EMA
+        t1 = cur + rps * self.T1_MULT
+        t2 = max(ema20[-1], cur + rps * self.T2_MULT)  # at least 1.8x, ideally EMA
         be = cur + rps * 0.8
 
         qty = int(capital_per_trade / cur)
@@ -116,3 +118,18 @@ class MeanReversionStrategy(BaseStrategy):
             max_hold_candles=self.MAX_HOLD_CANDLES,
             strategy_name=self.strategy_name, is_valid=True,
         )
+
+
+def _load_optimized_params():
+    import json, os
+    f = os.path.join(os.path.dirname(__file__), "..", "backtesting", "results", "best_params.json")
+    if os.path.exists(f):
+        try:
+            params = json.loads(open(f).read()).get("mean_reversion", {})
+            for k, v in params.items():
+                if hasattr(MeanReversionStrategy, k):
+                    setattr(MeanReversionStrategy, k, v)
+        except Exception:
+            pass
+
+_load_optimized_params()

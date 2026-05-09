@@ -87,7 +87,8 @@ class MarketRegimeDetector:
             # STRONG_BEAR = stay flat; WEAK_BEAR = allow cautious longs if VIX permits
             rec = "stay_flat" if regime == MarketRegime.STRONG_BEAR else "trade_long"
         else:
-            regime, conf, rec = MarketRegime.SIDEWAYS, 0.70, "stay_flat"
+            # Sideways — ORB works fine here; allow cautious trading
+            regime, conf, rec = MarketRegime.SIDEWAYS, 0.70, "trade_long"
 
         if vix >= self.VIX_HALT:
             rec = "stay_flat"
