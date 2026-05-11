@@ -426,14 +426,14 @@ def main():
     # ORB works in ANY regime — morning breakout doesn't need a trend.
     # Bull        → EMAPullback + ORB + MeanReversion
     # Sideways    → ORB only  (MeanReversion disabled — consistently loses in ranging markets)
-    # Bear        → EMABreakdown + ORB
+    # Bear        → EMABreakdown + ORB + MeanReversion (oversold bounces work well in weak bear)
     # High-vol    → ORB only  (directional EMA strategies too risky)
     _REGIME_ALLOWED = {
         "strong_bull":     {"EMAPullback", "ORB", "MeanReversion"},
         "weak_bull":       {"EMAPullback", "ORB", "MeanReversion"},
         "sideways":        {"ORB"},
-        "weak_bear":       {"EMABreakdown", "ORB"},
-        "strong_bear":     {"EMABreakdown", "ORB"},
+        "weak_bear":       {"EMABreakdown", "ORB", "MeanReversion"},
+        "strong_bear":     {"EMABreakdown", "ORB", "MeanReversion"},
         "high_volatility": {"ORB"},
     }
     _allowed = _REGIME_ALLOWED.get(regime.regime.value, {"ORB"})
