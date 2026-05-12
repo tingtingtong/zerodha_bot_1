@@ -6,9 +6,11 @@ and loads them into the EventCalendar.
 NSE's public API requires a browser-like session (cookies from homepage visit).
 No API key needed — this is the same data visible on nseindia.com.
 """
+import json
 import logging
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -148,23 +150,60 @@ def fetch_board_meetings(from_date: date, to_date: date,
         return []
 
 
-def load_into_calendar(event_calendar, lookahead_days: int = 7) -> dict:
+def load_into_calendar(event_calendar, lookahead_days: int = 7,
+                       cache_dir: str = ".cache/market_data") -> dict:
     """
     Main entry point — fetch next `lookahead_days` of NSE corporate actions
     and load them into the provided EventCalendar instance.
 
+    Results are cached once per day to avoid hammering NSE on every restart.
     Returns summary: {ex_dates: N, board_meetings: N, symbols: [...]}
     """
     today = date.today()
     to_date = today + timedelta(days=lookahead_days)
 
-    session = _get_session()
-    if session is None:
-        logger.warning("Could not connect to NSE — skipping corporate actions load")
-        return {"ex_dates": 0, "board_meetings": 0, "symbols": []}
+    cache_path = Path(cache_dir)
+    cache_path.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_path / f"nse_ca_{today.isoformat()}.json"
 
-    ex_records = fetch_ex_dates(today, to_date, session)
-    bm_records = fetch_board_meetings(today, to_date, session)
+    # Try loading from today's cache
+    if cache_file.exists():
+        try:
+            with open(cache_file) as f:
+                cached = json.load(f)
+            ex_records = [
+                {**r, "ex_date": date.fromisoformat(r["ex_date"])}
+                for r in cached.get("ex_records", [])
+            ]
+            bm_records = [
+                {**r, "meeting_date": date.fromisoformat(r["meeting_date"])}
+                for r in cached.get("bm_records", [])
+            ]
+            logger.info(f"NSE corporate actions loaded from cache ({len(ex_records)} ex-dates, {len(bm_records)} board meetings)")
+        except Exception as e:
+            logger.debug(f"NSE cache read failed ({e}), fetching live")
+            ex_records, bm_records = None, None
+    else:
+        ex_records, bm_records = None, None
+
+    if ex_records is None:
+        session = _get_session()
+        if session is None:
+            logger.warning("Could not connect to NSE — skipping corporate actions load")
+            return {"ex_dates": 0, "board_meetings": 0, "symbols": []}
+
+        ex_records = fetch_ex_dates(today, to_date, session)
+        bm_records = fetch_board_meetings(today, to_date, session)
+
+        # Write cache (serialize dates as strings)
+        try:
+            with open(cache_file, "w") as f:
+                json.dump({
+                    "ex_records": [{**r, "ex_date": r["ex_date"].isoformat()} for r in ex_records],
+                    "bm_records": [{**r, "meeting_date": r["meeting_date"].isoformat()} for r in bm_records],
+                }, f)
+        except Exception as e:
+            logger.debug(f"NSE cache write failed: {e}")
 
     loaded_symbols = set()
 

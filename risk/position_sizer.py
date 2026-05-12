@@ -37,7 +37,7 @@ class PositionSizer:
 
     def calculate_qty(self, entry_price: float, stop_loss: float,
                       size_multiplier: float = 1.0) -> int:
-        rps = entry_price - stop_loss
+        rps = abs(entry_price - stop_loss)  # works for long and short
         if rps <= 0 or entry_price <= 0:
             return 0
         allowed_risk = self.max_risk_per_trade() * size_multiplier

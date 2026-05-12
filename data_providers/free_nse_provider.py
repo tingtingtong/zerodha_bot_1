@@ -69,13 +69,31 @@ class FreeNSEProvider(DataProviderBase):
 
     def _fetch_yfinance(self, symbol, interval, from_date, to_date):
         import yfinance as yf
+        from datetime import timedelta
         yf_interval = YFINANCE_INTERVAL_MAP.get(interval, "1d")
         time.sleep(self.RATE_LIMIT_DELAY)
-        df = yf.Ticker(self._yf_symbol(symbol)).history(
-            start=from_date.strftime("%Y-%m-%d"),
-            end=to_date.strftime("%Y-%m-%d"),
-            interval=yf_interval, auto_adjust=True, prepost=False,
-        )
+        if interval in ("1m", "5m", "15m", "30m", "60m"):
+            # yfinance period-based fetch returns far more intraday candles than
+            # explicit date ranges for NSE. Pick period that covers from_date.
+            days_back = (datetime.now(from_date.tzinfo or pytz.utc) - from_date).days + 1
+            if days_back <= 5:
+                period = "5d"
+            elif days_back <= 30:
+                period = "1mo"
+            elif days_back <= 60:
+                period = "60d"
+            else:
+                period = "60d"  # yfinance 15m max lookback is ~60 days
+            df = yf.Ticker(self._yf_symbol(symbol)).history(
+                period=period, interval=yf_interval,
+                auto_adjust=True, prepost=False,
+            )
+        else:
+            df = yf.Ticker(self._yf_symbol(symbol)).history(
+                start=from_date.strftime("%Y-%m-%d"),
+                end=to_date.strftime("%Y-%m-%d"),
+                interval=yf_interval, auto_adjust=True, prepost=False,
+            )
         return df if len(df) > 0 else None
 
     def _fetch_nsepy(self, symbol, from_date, to_date):

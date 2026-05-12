@@ -4,6 +4,7 @@
 
 cd ~/zerodhaBot
 source venv/bin/activate
+export BOT_INSTANCE=gcp
 
 DATE=$(date +%Y-%m-%d)
 LOG="journaling/logs/bot_${DATE}.log"

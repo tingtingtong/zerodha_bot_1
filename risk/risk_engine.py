@@ -98,9 +98,9 @@ class RiskEngine:
             return RiskCheckResult(RiskDecision.REJECTED,
                                    f"quality_{setup_quality}_below_{self.quality_min}")
 
-        rps = entry_price - stop_loss
+        rps = abs(entry_price - stop_loss)  # works for both long (SL below) and short (SL above)
         if rps <= 0:
-            return RiskCheckResult(RiskDecision.REJECTED, "sl_above_entry")
+            return RiskCheckResult(RiskDecision.REJECTED, "sl_equals_entry")
 
         qty = self.sizer.calculate_qty(entry_price, stop_loss, size_mult)
         if avg_daily_volume > 0:

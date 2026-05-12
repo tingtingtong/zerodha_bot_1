@@ -10,23 +10,41 @@ logger = logging.getLogger(__name__)
 
 class DataProviderRegistry:
 
+    # After this many consecutive auth failures, skip the provider for the session
+    _AUTH_FAILURE_THRESHOLD = 3
+
     def __init__(self, providers: List[DataProviderBase]):
         if not providers:
             raise ValueError("At least one data provider required")
         self.providers = providers
+        self._auth_failures: dict = {}   # provider_name -> consecutive auth fail count
+        self._skip_providers: set = set()
+
+    def _is_auth_error(self, err: Exception) -> bool:
+        msg = str(err).lower()
+        return "api_key" in msg or "access_token" in msg or "incorrect" in msg or "permission" in msg
 
     def get_historical(self, symbol: str, interval: str,
                        from_date: datetime, to_date: datetime) -> pd.DataFrame:
         last_err = None
         for p in self.providers:
+            if p.provider_name in self._skip_providers:
+                continue
             try:
                 df = p.get_historical(symbol, interval, from_date, to_date)
                 if df is not None and len(df) >= 2:
                     logger.debug(f"[{p.provider_name}] {symbol}/{interval} OK ({len(df)} rows)")
+                    self._auth_failures[p.provider_name] = 0
                     return df
             except Exception as e:
                 last_err = e
-                logger.warning(f"[{p.provider_name}] {symbol}/{interval} failed: {e}")
+                if self._is_auth_error(e):
+                    self._auth_failures[p.provider_name] = self._auth_failures.get(p.provider_name, 0) + 1
+                    if self._auth_failures[p.provider_name] >= self._AUTH_FAILURE_THRESHOLD:
+                        self._skip_providers.add(p.provider_name)
+                        logger.warning(f"[{p.provider_name}] auth failures >= {self._AUTH_FAILURE_THRESHOLD} — skipping for this session")
+                else:
+                    logger.warning(f"[{p.provider_name}] {symbol}/{interval} failed: {e}")
         raise DataUnavailableError(f"All providers failed for {symbol}/{interval}. Last: {last_err}")
 
     def get_quote(self, symbol: str):

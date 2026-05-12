@@ -12,6 +12,8 @@ class TelegramNotifier:
         self.token = token or os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID", "")
         self._enabled = bool(self.token and self.chat_id)
+        instance = os.getenv("BOT_INSTANCE", "").strip()
+        self._prefix = f"[{instance.upper()}] " if instance else ""
 
     def send(self, message: str) -> bool:
         if not self._enabled:
@@ -19,6 +21,8 @@ class TelegramNotifier:
             return False
         import requests
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+        if self._prefix:
+            message = self._prefix + message
         if len(message) > 4000:
             message = message[:3990] + "\n...(truncated)"
         for parse_mode in ("HTML", None):
@@ -168,7 +172,8 @@ class TelegramNotifier:
     def send_hourly_status(self, hour: str, regime: str, vix: float,
                            account_value: float, daily_pnl: float,
                            open_trades: list, trades_today: int,
-                           kill_switch: bool, steps: list = None):
+                           kill_switch: bool, steps: list = None,
+                           completed_trades: list = None):
         open_lines = ""
         if open_trades:
             for t in open_trades:
@@ -179,6 +184,23 @@ class TelegramNotifier:
             open_lines = "  None\n"
 
         ks_line = "[!] KILL SWITCH ACTIVE" if kill_switch else "[OK] Normal"
+
+        # Completed trades table
+        trades_lines = ""
+        if completed_trades:
+            wins = sum(1 for t in completed_trades if t.get("net_pnl", 0) >= 0)
+            losses = len(completed_trades) - wins
+            net = sum(t.get("net_pnl", 0) for t in completed_trades)
+            sign = "+" if net >= 0 else ""
+            trades_lines = f"\n<b>Trades Today ({wins}W {losses}L | Net: Rs.{sign}{net:,.0f}):</b>\n"
+            for t in completed_trades:
+                pnl = t.get("net_pnl", 0)
+                icon = "✓" if pnl >= 0 else "✗"
+                direction = t.get("direction", "long").capitalize()
+                sym = t.get("symbol", "?")
+                strategy = t.get("strategy", "?")
+                result = t.get("state", "closed").replace("closed_", "")
+                trades_lines += f"  {icon} {sym} {direction} [{strategy}] Rs.{pnl:+.0f} ({result})\n"
 
         steps_lines = ""
         if steps:
@@ -192,20 +214,20 @@ class TelegramNotifier:
                 if len(unique_steps) >= 10:
                     break
             unique_steps.reverse()
-            steps_lines = "\n<b>Activity this period:</b>\n"
+            steps_lines = "\n<b>Activity this hour:</b>\n"
             for s in unique_steps:
                 safe = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 steps_lines += f"  {safe}\n"
 
         self.send(
-            f"<b>STATUS — {hour}</b>\n"
+            f"<b>HOURLY STATUS — {hour}</b>\n"
             f"--------------------\n"
             f"Regime  : {regime.upper()}  |  VIX: {vix:.1f}\n"
             f"Account : Rs.{account_value:,.0f}  |  Day P&amp;L: Rs.{daily_pnl:+.2f}\n"
-            f"Trades  : {trades_today} today\n"
             f"Risk    : {ks_line}\n"
             f"--------------------\n"
             f"<b>Open Positions:</b>\n{open_lines}"
+            f"{trades_lines}"
             f"{steps_lines}"
         )
 

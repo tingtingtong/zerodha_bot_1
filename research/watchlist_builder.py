@@ -81,13 +81,19 @@ class WatchlistBuilder:
         self._last_refresh: Optional[datetime] = None
 
     def build(self, data_registry, nifty_daily: pd.DataFrame, vix: float = 15.0,
-              config: dict = None, event_symbols: List[str] = None) -> Tuple[RegimeResult, List[WatchlistEntry]]:
+              config: dict = None, event_symbols: List[str] = None,
+              sentiment_map: dict = None,
+              fundamentals_map: dict = None) -> Tuple[RegimeResult, List[WatchlistEntry]]:
 
         config = config or {}
         event_set = set(event_symbols or [])
+        sentiment_map = sentiment_map or {}
+        fundamentals_map = fundamentals_map or {}
         max_size = config.get("max_watchlist_size", 10)
         base_min_score = config.get("min_score_for_watchlist", 60)
         universe_size = config.get("universe_size", 50)
+        sentiment_neg_threshold = config.get("sentiment_negative_threshold", -0.3)
+        sentiment_pos_boost = config.get("sentiment_positive_boost", 0.4)
 
         regime = self.regime_detector.detect(nifty_daily, vix=vix)
         logger.info(f"Regime: {regime.regime.value} | Rec: {regime.recommendation} | VIX: {vix:.1f}")
@@ -121,6 +127,8 @@ class WatchlistBuilder:
             try:
                 df = data_registry.get_historical(sym, "1d", from_date, to_date)
                 s = self.screener.score(sym, df, upcoming_event=(sym in event_set))
+                s = self._apply_external_signals(s, sym, sentiment_map, fundamentals_map,
+                                                  sentiment_neg_threshold, sentiment_pos_boost)
                 scores.append(s)  # include regardless of tradeable flag — let score decide
             except Exception as e:
                 logger.debug(f"Preferred {sym}: {e}")
@@ -133,6 +141,8 @@ class WatchlistBuilder:
                 df = data_registry.get_historical(sym, "1d", from_date, to_date)
                 s = self.screener.score(sym, df, upcoming_event=(sym in event_set))
                 if s.tradeable:
+                    s = self._apply_external_signals(s, sym, sentiment_map, fundamentals_map,
+                                                      sentiment_neg_threshold, sentiment_pos_boost)
                     scores.append(s)
             except Exception as e:
                 logger.debug(f"{sym}: {e}")
@@ -167,14 +177,77 @@ class WatchlistBuilder:
             for rank, s in enumerate(qualified, 1)
         ]
 
+        # Bear candidates — low-RSI stocks for EMA Breakdown / Mean Reversion strategies.
+        # These may not score high (bearish = low total score) but are exactly what bear
+        # strategies need. Built from ALL scored stocks, not just top-20.
+        watchlist_syms = {s.symbol for s in qualified}
+        bear_entries = [
+            WatchlistEntry(
+                symbol=s.symbol, score=s.total_score, price=s.price,
+                atr_pct=s.atr_pct, rsi=s.rsi_14, volume_spike=s.volume_spike,
+                sector=s.sector, is_etf=False, rank=0,
+                added_at=datetime.now(IST),
+                notes=f"bear_rsi{s.rsi_14:.0f}_vol{s.volume_spike:.1f}x",
+            )
+            for s in scores
+            if s.rsi_14 < 45 and s.symbol not in watchlist_syms and s.price > 0
+        ]
+        bear_entries.sort(key=lambda x: x.rsi)  # lowest RSI first
+        self._bear_candidates = bear_entries[:20]
+        if self._bear_candidates:
+            logger.info(
+                f"Bear candidates (RSI<45): {len(self._bear_candidates)} stocks — "
+                f"lowest: {[(w.symbol, round(w.rsi)) for w in self._bear_candidates[:5]]}"
+            )
+
         self._last_watchlist = watchlist
         self._last_refresh = datetime.now(IST)
         logger.info(f"Watchlist: {len(watchlist)} symbols | Top5: {[w.symbol for w in watchlist[:5]]}")
         return regime, watchlist
 
+    def _apply_external_signals(self, s, symbol: str,
+                                sentiment_map: dict, fundamentals_map: dict,
+                                neg_threshold: float, pos_boost: float):
+        """Adjust StockScore based on news sentiment and fundamentals."""
+        import dataclasses
+
+        adj = 0
+        notes_parts = []
+
+        # News sentiment
+        if symbol in sentiment_map:
+            sr = sentiment_map[symbol]
+            if sr.is_flagged:
+                adj -= 20
+                notes_parts.append(f"neg_news({sr.sentiment_score:.2f})")
+                logger.info(f"{symbol}: negative news flag (score={sr.sentiment_score:.2f}) — penalising -20pts")
+            elif sr.is_boosted:
+                adj += 8
+                notes_parts.append(f"pos_news({sr.sentiment_score:.2f})")
+
+        # Screener fundamentals
+        if symbol in fundamentals_map:
+            fr = fundamentals_map[symbol]
+            adj += fr.score_adjustment
+            if not fr.passes_filter:
+                notes_parts.append(f"fund_fail({fr.filter_reason})")
+                logger.debug(f"{symbol}: fundamentals filter — {fr.filter_reason} ({fr.score_adjustment:+d}pts)")
+            elif fr.score_adjustment > 0:
+                notes_parts.append(f"fund_ok(+{fr.score_adjustment})")
+
+        if adj != 0:
+            new_score = max(0.0, s.total_score + adj)
+            s = dataclasses.replace(s, total_score=new_score)
+
+        return s
+
     @property
     def active_candidates(self) -> List[WatchlistEntry]:
-        return self._last_watchlist[:5]
+        return self._last_watchlist
+
+    @property
+    def bear_candidates(self) -> List[WatchlistEntry]:
+        return getattr(self, "_bear_candidates", [])
 
     @property
     def last_refresh(self) -> Optional[datetime]:

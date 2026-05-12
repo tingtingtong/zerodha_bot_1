@@ -38,6 +38,7 @@ risk:
 
 strategy:
   active:
+    - "orb"
     - "ema_pullback"
     - "ema_breakdown"
     - "mean_reversion"
@@ -56,35 +57,37 @@ market_research:
     - "GOLDBEES"
     - "JUNIORBEES"
     - "ITBEES"
-  # Preferred symbols — ranked by 5yr backtest (255 stocks scanned, 2021-2026)
-  # Score = net P&L + Sharpe + Profit Factor composite
+  # Preferred symbols — blended: 5yr backtest (2021-2026) + recent 58-day 15m scan (Feb-Apr 2026)
+  # Recent scan: mean_reversion only (EMA/ORB had 0 signals — sideways market)
+  # Removed from old list: TITAGARH(-3316), RVNL(-810), SRF(-4520), RAYMOND(-23),
+  #   PRESTIGE(-722), VEDL(-1093), CUMMINSIND(-306), DIXON(-198), SCHAEFFLER(-1886),
+  #   INDUSTOWER(-233), WELCORP(+111), HUDCO(-1550), CRISIL(-1522), SBIN(-613), BAJAJHLDNG(+273)
   preferred_symbols:
-    - "TITAGARH"     # #1:  73% WR, Sharpe 9.78, avg +1304/mo
-    - "RVNL"         # #2:  65% WR, Sharpe 8.61, avg +1292/mo
-    - "ONGC"         # #3:  68% WR, Sharpe 7.76, avg  +997/mo
-    - "NBCC"         # #4:  69% WR, Sharpe 7.61, avg  +985/mo
-    - "SBIN"         # #5:  62% WR, Sharpe 6.85, avg  +863/mo
-    - "BHEL"         # #6:  56% WR, Sharpe 6.02, avg  +824/mo
-    - "RAYMOND"      # #7:  61% WR, Sharpe 6.32, avg  +933/mo
-    - "PRESTIGE"     # #8:  63% WR, Sharpe 6.01, avg  +818/mo
-    - "BAJAJHLDNG"   # #9:  56% WR, Sharpe 5.66, avg  +811/mo
-    - "VEDL"         # #10: 54% WR, Sharpe 6.36, avg  +836/mo
-    - "CUMMINSIND"   # #11: 62% WR, Sharpe 6.33, avg  +769/mo
-    - "DIXON"        # #12: 62% WR, Sharpe 6.18, avg  +702/mo
-    - "SCHAEFFLER"   # #13: 58% WR, Sharpe 5.35, avg  +757/mo
-    - "SRF"          # #14: 65% WR, Sharpe 5.67, avg  +704/mo
-    - "INDUSTOWER"   # #15: 64% WR, Sharpe 5.65, avg  +658/mo
-    - "WELCORP"      # #16: 56% WR, Sharpe 5.03, avg  +739/mo
-    - "HUDCO"        # #17: 61% WR, Sharpe 5.24, avg  +681/mo
-    - "COFORGE"      # #18: 62% WR, Sharpe 5.14, avg  +607/mo
-    - "KPRMILL"      # #19: 55% WR, Sharpe 4.50, avg  +675/mo
-    - "CRISIL"       # #20: 54% WR, Sharpe 4.78, avg  +606/mo
-    # Removed: AXISBANK (#63), KOTAKBANK (#68), ICICIBANK (#106) — still profitable
-    # but outperformed by smaller/mid-caps in this strategy
+    - "ONGC"         # 5yr+recent: 60% WR, Sharpe 7.2, recent +1529
+    - "BHEL"         # 5yr+recent: 50% WR, Sharpe 3.3, recent +1362
+    - "KPRMILL"      # 5yr+recent: 50% WR, Sharpe 3.6, recent +1354
+    - "COFORGE"      # 5yr+recent: 42% WR, Sharpe ok,  recent +970
+    - "NBCC"         # 5yr+recent: 47% WR, Sharpe ok,  recent +969
+    - "ZENTEC"       # recent #1:  73% WR, Sharpe 14.5, +4076
+    - "USHAMART"     # recent #2:  65% WR, Sharpe 8.7,  +3731
+    - "IRB"          # recent #3:  75% WR, Sharpe 9.5,  +3600
+    - "PRAJIND"      # recent #4:  64% WR, Sharpe 7.1,  +2772
+    - "KALYANKJIL"   # recent #5:  53% WR, Sharpe 5.4,  +2516
+    - "ATUL"         # recent #6:  78% WR, Sharpe 10.0, +2309
+    - "UNIONBANK"    # recent #7:  55% WR, Sharpe 5.0,  +2049
+    - "RITES"        # recent #8:  63% WR, Sharpe 4.4,  +1997
+    - "PIIND"        # recent #9:  50% WR, Sharpe 5.0,  +1800
+    - "TITAN"        # recent #10: 50% WR, Sharpe 4.9,  +1789
+    - "RAILTEL"      # recent #11: 44% WR, Sharpe 3.2,  +1698
+    - "KEI"          # recent #13: 57% WR, Sharpe 8.9,  +1588
+    - "BRIGADE"      # recent #15: 50% WR, Sharpe 4.9,  +1528
+    - "IDBI"         # recent #16: 67% WR, Sharpe 5.7,  +1418
+    - "DIVISLAB"     # recent #20: 56% WR, Sharpe 5.4,  +1329
     # Hard avoid: HDFCBANK, BIOCON, IGL, CONCOR, ABFRL, SYNGENE, AMBUJACEM
-  universe_size: 100
-  max_watchlist_size: 20
-  max_active_candidates: 10
+    # Recent avoid: SRF(-4520), MMTC(-4816), TCS(-3546), EICHERMOT(-3100), TCIEXP(-3072)
+  universe_size: 200
+  max_watchlist_size: 30
+  max_active_candidates: 30
   min_score_for_watchlist: 60
   min_avg_daily_turnover: 50000000
   min_avg_daily_volume: 200000
@@ -102,6 +105,19 @@ market_research:
     - "10:00"
     - "14:00"
   avoid_event_within_days: 3
+
+  # ── News sentiment (ET RSS) ──────────────────────────────────────
+  news_sentiment_enabled: true
+  sentiment_cache_ttl_minutes: 30
+  sentiment_negative_threshold: -0.3   # flag symbol if score below this
+  sentiment_positive_boost: 0.4        # boost score if above this (+8 pts)
+
+  # ── Screener.in fundamentals ─────────────────────────────────────
+  screener_fundamentals_enabled: true
+  fundamentals_cache_ttl_hours: 24
+  screener_max_debt_equity: 0.5        # D/E > 0.5 → penalty (-10 pts)
+  screener_min_promoter_pct: 25.0      # promoter < 25% → penalty (-10 pts); 50%+ = ideal but many good stocks are 30-50%
+  screener_require_positive_earnings: true  # any loss quarter → penalty
 
 data:
   provider_mode: "zerodha_with_fallback"  # free_only | zerodha | zerodha_with_fallback

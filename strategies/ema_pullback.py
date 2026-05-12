@@ -10,9 +10,11 @@ class EMAPullbackStrategy(BaseStrategy):
 
     EMA_FAST = 9
     EMA_SLOW = 21
-    MIN_VOL_MULT = 1.5   # raised from 1.2 — need genuine volume surge, not just above average
+    MIN_VOL_MULT = 1.0   # lowered — any above-average volume is fine for pullback entries
     MIN_RR = 1.5
     MAX_HOLD_CANDLES = 16
+    T1_MULT = 1.5          # target_1 = entry + rps * T1_MULT
+    T2_MULT = 2.5          # target_2 = entry + rps * T2_MULT
     NO_TRADE_BEFORE = "09:45"
     NO_TRADE_AFTER = "14:45"
 
@@ -27,10 +29,16 @@ class EMAPullbackStrategy(BaseStrategy):
     def generate_signal(self, symbol, df_primary, df_daily,
                         regime_bullish, capital_per_trade, charges_estimate) -> TradeSetup:
 
-        # Regime gate — EMA pullback only trades in bull markets (strong_bull or weak_bull)
-        # In bear/sideways, mean_reversion handles signal generation instead
+        # Regime gate — prefer bull markets, but allow longs in weak_bear/sideways
+        # if the individual stock is in its own uptrend (above daily EMA20).
+        # Stock-specific strength can override market weakness.
         if not regime_bullish:
-            return self._no_trade(symbol, "regime_not_bullish")
+            if df_daily is None or len(df_daily) < 22:
+                return self._no_trade(symbol, "regime_not_bullish")
+            _dc = df_daily["close"].values
+            _de20 = self._ema(_dc, 20)
+            if _dc[-1] < _de20[-1]:
+                return self._no_trade(symbol, "regime_not_bullish_stock_weak")
 
         if df_primary is None or len(df_primary) < 30:
             return self._no_trade(symbol, "insufficient_15m_data")
@@ -76,8 +84,8 @@ class EMAPullbackStrategy(BaseStrategy):
             return self._no_trade(symbol, "bounce_candle_below_ema9")
 
         rsi = self._rsi(c, 14)
-        if rsi < 55:
-            return self._no_trade(symbol, f"rsi_below_55_{rsi:.1f}")
+        if rsi < 50:
+            return self._no_trade(symbol, f"rsi_below_50_{rsi:.1f}")
 
         avg_vol = float(np.mean(v[-20:-1])) if len(v) > 20 else float(np.mean(v))
         if v[-1] < avg_vol * self.MIN_VOL_MULT:
@@ -93,8 +101,8 @@ class EMAPullbackStrategy(BaseStrategy):
         if rps <= 0.01:
             return self._no_trade(symbol, "invalid_sl")
 
-        t1 = cur + rps * 1.5
-        t2 = cur + rps * 2.5
+        t1 = cur + rps * self.T1_MULT
+        t2 = cur + rps * self.T2_MULT
         be = cur + rps * 1.0
         qty = int(capital_per_trade / cur)
 
@@ -123,3 +131,18 @@ class EMAPullbackStrategy(BaseStrategy):
             max_hold_candles=self.MAX_HOLD_CANDLES,
             strategy_name=self.strategy_name, is_valid=True,
         )
+
+
+def _load_optimized_params():
+    import json, os
+    f = os.path.join(os.path.dirname(__file__), "..", "backtesting", "results", "best_params.json")
+    if os.path.exists(f):
+        try:
+            params = json.loads(open(f).read()).get("ema_pullback", {})
+            for k, v in params.items():
+                if hasattr(EMAPullbackStrategy, k):
+                    setattr(EMAPullbackStrategy, k, v)
+        except Exception:
+            pass
+
+_load_optimized_params()
