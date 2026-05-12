@@ -97,7 +97,7 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
-    mode = args.mode or config["bot"].get("mode", "live")
+    mode = args.mode or config["bot"].get("mode", "paper")
     config["bot"]["mode"] = mode
 
     logger = setup_logging(
