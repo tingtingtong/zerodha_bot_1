@@ -268,13 +268,19 @@ class OrderManager:
                 continue
             trade.candles_held += 1
 
+            is_short = trade.direction == "short"
+
+            # Stop loss — always checked first, before time or targets
+            sl_hit = (current_price >= trade.stop_loss) if is_short else (current_price <= trade.stop_loss)
+            if sl_hit and trade.is_open():
+                self.close_trade(tid, trade.stop_loss, "sl_hit")
+                continue
+
             # Time-based exit
             max_hold = getattr(trade, 'max_hold_candles', 16)
             if trade.candles_held >= max_hold:
                 self.close_trade(tid, current_price, "time_exit")
                 continue
-
-            is_short = trade.direction == "short"
 
             # Target 2 — full exit
             t2_hit = (current_price <= trade.target_2) if is_short else (current_price >= trade.target_2)
