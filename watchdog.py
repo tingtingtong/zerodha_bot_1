@@ -149,24 +149,23 @@ def main():
 
         if not is_trading_day(now.date()):
             reason = "Weekend" if not is_weekday(now) else "Market holiday"
-            logger.info(f"{reason} ({now.strftime('%Y-%m-%d %A')}) — sleeping 1h")
-            time.sleep(3600)
+            logger.info(f"{reason} ({now.strftime('%Y-%m-%d %A')}) — sleeping 10m")
+            time.sleep(600)  # 10 min slices — survives PC hibernate/wake cycles
             continue
 
         market_started = now.hour * 60 + now.minute >= START_HOUR * 60 + START_MIN
         market_closed  = now.hour * 60 + now.minute >= STOP_HOUR  * 60 + STOP_MIN
 
         if market_closed:
-            # Wait until 9:00 AM next day
             wait = seconds_until(START_HOUR, START_MIN)
-            logger.info(f"Market closed — sleeping {wait/3600:.1f}h until next 9:00 AM")
-            time.sleep(wait + 30)
+            logger.info(f"Market closed — sleeping 10m (next 9:00 AM in {wait/3600:.1f}h)")
+            time.sleep(600)  # 10 min slices — survives PC hibernate/wake cycles
             continue
 
         if not market_started:
             wait = seconds_until(START_HOUR, START_MIN)
-            logger.info(f"Pre-market — sleeping {wait/60:.1f} min until 9:00 AM")
-            time.sleep(min(wait, 60))
+            logger.info(f"Pre-market — sleeping 1m until 9:00 AM ({wait/60:.1f}min away)")
+            time.sleep(60)
             continue
 
         # It's a weekday between 9:00 and 15:30 — ensure login then run bot

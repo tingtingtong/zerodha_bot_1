@@ -645,6 +645,7 @@ def main():
 
                     success = order_mgr.execute_entry(trade, setup.entry_price)
                     if success:
+                        break  # one trade per symbol per scan — skip remaining strategies
                         hourly_steps.append(f"✅ {sym} ORDER PLACED — qty={risk_check.adjusted_qty} @ Rs.{setup.entry_price:.2f}")
                         journal.save_trade(trade)
                         if config["notifications"]["enabled"]:
