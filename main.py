@@ -711,8 +711,9 @@ def main():
         # Keep options sizing in sync with current account value
         options_layer.total_capital = risk.account_value
 
-        # Save account state
-        journal.save_account_state(risk.account_value, risk.daily_pnl)
+        # Save account state — only in paper mode to avoid live Zerodha balance corrupting paper state
+        if mode == "paper":
+            journal.save_account_state(risk.account_value, risk.daily_pnl)
 
         # ── Hourly status report ──────────────────────────────────
         cur_slot = now.hour
