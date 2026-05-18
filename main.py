@@ -108,9 +108,24 @@ def main():
     logger.info(f"  ZerodhaBot v{config['bot']['version']}  |  Mode: {mode.upper()}")
     logger.info(f"{'='*60}")
 
-    # Write PID file so Telegram commander can track this process
+    # Single-instance guard — prevent duplicate trades from two concurrent bot processes
     pid_file = ROOT / "journaling" / "bot.pid"
     pid_file.parent.mkdir(parents=True, exist_ok=True)
+    if pid_file.exists():
+        try:
+            existing_pid = int(pid_file.read_text().strip())
+            import subprocess as _sp
+            out = _sp.run(
+                ["tasklist", "/FI", f"PID eq {existing_pid}", "/NH", "/FO", "CSV"],
+                capture_output=True, text=True,
+            ).stdout
+            if str(existing_pid) in out:
+                logger.warning(
+                    f"Bot already running (PID {existing_pid}) — exiting to prevent duplicate trades."
+                )
+                sys.exit(0)
+        except Exception:
+            pass  # stale PID file — safe to overwrite
     pid_file.write_text(str(os.getpid()))
 
     # ── Load persisted account value ──────────────────────────────
@@ -645,7 +660,6 @@ def main():
 
                     success = order_mgr.execute_entry(trade, setup.entry_price)
                     if success:
-                        break  # one trade per symbol per scan — skip remaining strategies
                         hourly_steps.append(f"✅ {sym} ORDER PLACED — qty={risk_check.adjusted_qty} @ Rs.{setup.entry_price:.2f}")
                         journal.save_trade(trade)
                         if config["notifications"]["enabled"]:
@@ -668,7 +682,7 @@ def main():
                                     f"📈 [OPTIONS] Grade-A: {ot.lots} lots {ot.symbol} "
                                     f"@ Rs.{ot.entry_premium:.0f}/unit"
                                 )
-                        break  # One trade at a time per loop
+                        break  # one trade per symbol per scan — skip remaining strategies
 
         # ── Update open trade prices and manage exits ──────────────
         from execution.trade_state_machine import TradeState
