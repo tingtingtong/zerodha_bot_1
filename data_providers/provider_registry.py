@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import List
 from datetime import datetime
 import pandas as pd
@@ -6,6 +7,12 @@ import pandas as pd
 from .base import DataProviderBase, DataUnavailableError
 
 logger = logging.getLogger(__name__)
+
+# Candle cache TTL (seconds) — re-fetch only after the current candle period expires
+_INTERVAL_TTL = {
+    "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "60m": 3600, "1d": 1800,
+}
 
 
 class DataProviderRegistry:
@@ -19,6 +26,7 @@ class DataProviderRegistry:
         self.providers = providers
         self._auth_failures: dict = {}   # provider_name -> consecutive auth fail count
         self._skip_providers: set = set()
+        self._candle_cache: dict = {}    # (symbol, interval) -> (df, fetched_at)
 
     def _is_auth_error(self, err: Exception) -> bool:
         msg = str(err).lower()
@@ -26,6 +34,13 @@ class DataProviderRegistry:
 
     def get_historical(self, symbol: str, interval: str,
                        from_date: datetime, to_date: datetime) -> pd.DataFrame:
+        ttl = _INTERVAL_TTL.get(interval, 900)
+        cache_key = (symbol, interval)
+        cached_df, cached_at = self._candle_cache.get(cache_key, (None, 0))
+        if cached_df is not None and (time.time() - cached_at) < ttl:
+            logger.debug(f"[cache] {symbol}/{interval} hit (age {int(time.time()-cached_at)}s)")
+            return cached_df
+
         last_err = None
         for p in self.providers:
             if p.provider_name in self._skip_providers:
@@ -35,6 +50,7 @@ class DataProviderRegistry:
                 if df is not None and len(df) >= 2:
                     logger.debug(f"[{p.provider_name}] {symbol}/{interval} OK ({len(df)} rows)")
                     self._auth_failures[p.provider_name] = 0
+                    self._candle_cache[cache_key] = (df, time.time())
                     return df
             except Exception as e:
                 last_err = e
