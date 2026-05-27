@@ -3,7 +3,7 @@ bot:
   version: "1.0.0"
   mode: "paper"                    # paper | semi_auto | live
   timezone: "Asia/Kolkata"
-  log_level: "INFO"
+  log_level: "DEBUG"
   log_dir: "journaling/logs"
 
 account:
