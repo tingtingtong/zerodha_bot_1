@@ -228,6 +228,14 @@ def main():
     except Exception:
         vix = 15.0
 
+    # ── Global pre-market cues ─────────────────────────────────────
+    global_cues = {}
+    try:
+        from research.global_cues import fetch_global_cues
+        global_cues = fetch_global_cues()
+    except Exception as e:
+        logger.warning(f"Global cues fetch failed (non-critical): {e}")
+
     # ── Load NSE corporate actions into event calendar ─────────────
     try:
         from research.nse_corporate_actions import load_into_calendar
@@ -342,6 +350,7 @@ def main():
             blockers=blockers,
             trade_probability=probability,
             next_trading_day=next_trading_day(),
+            global_cues=global_cues,
         )
 
     hard_stay_flat = (

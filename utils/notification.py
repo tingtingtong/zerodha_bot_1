@@ -122,7 +122,8 @@ class TelegramNotifier:
                              tier_name: str, max_risk_inr: float, max_trades: int,
                              watchlist: list, strategies: list,
                              blockers: list, trade_probability: str,
-                             next_trading_day: date = None):
+                             next_trading_day: date = None,
+                             global_cues: dict = None):
         """Daily pre-market analysis — sent ~9:00 AM before market opens."""
 
         regime_icon = {
@@ -149,12 +150,26 @@ class TelegramNotifier:
         if next_trading_day and next_trading_day != date.today():
             next_day_note = f"\nNext trading day: {next_trading_day.strftime('%a %d %b')}"
 
+        # Global cues block
+        cues_lines = ""
+        if global_cues:
+            cues_lines = "\n<b>Global Cues</b>\n"
+            for key in ("dow_futures", "sp_futures", "nifty_spot"):
+                c = global_cues.get(key)
+                if c:
+                    arrow = "+" if c["change_pct"] >= 0 else ""
+                    cues_lines += f"  {c['label']:<10}: {arrow}{c['change_pct']:+.2f}%  ({c['price']:,.0f})\n"
+            note = global_cues.get("gift_nifty_note", "")
+            if note:
+                cues_lines += f"  {note}\n"
+
         self.send(
             f"<b>PRE-MARKET BRIEF — {date.today().strftime('%a %d %b %Y')}</b>\n"
             f"--------------------\n"
             f"\n<b>Market Conditions</b>\n"
             f"  Regime : {regime_icon} {regime.upper()}\n"
             f"  VIX    : {vix:.1f}{vix_note}\n"
+            f"{cues_lines}"
             f"\n<b>Account — {tier_name} Tier</b>\n"
             f"  Capital    : Rs.{account_value:,.0f}\n"
             f"  Max risk   : Rs.{max_risk_inr:.0f} per trade\n"
