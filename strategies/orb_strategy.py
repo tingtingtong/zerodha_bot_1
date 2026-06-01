@@ -26,7 +26,7 @@ class ORBStrategy(BaseStrategy):
 
     MIN_RANGE_PCT = 0.003   # 0.3% minimum range — filters choppy opens
     MAX_RANGE_PCT = 0.030   # 3.0% maximum range — filters gap/circuit days
-    MIN_VOL_MULT = 1.2      # breakout candle volume >= 1.2x average
+    MIN_VOL_MULT = 0.8      # breakout candle volume >= 0.8x average
     MIN_RR = 1.5
     MAX_HOLD_CANDLES = 12   # 3 hours max hold
     NO_TRADE_BEFORE = "09:45"
