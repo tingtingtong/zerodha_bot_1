@@ -40,7 +40,7 @@ strategy:
   active:
     - "orb"
     - "ema_pullback"
-    - "ema_breakdown"
+    # ema_breakdown disabled — 8% WR, -₹3,910 loss across 24 trades
     - "mean_reversion"
     # etf_momentum disabled — backtests show consistent losses (win rate 34%, PF 0.66)
   primary_timeframe: "15m"
