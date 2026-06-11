@@ -41,6 +41,9 @@ class TradeJournal:
 
     def save_account_state(self, account_value: float, daily_pnl: float,
                            path: str = "journaling/account_state.json"):
+        if account_value <= 0:
+            logger.warning(f"save_account_state: refusing to persist invalid account_value={account_value}")
+            return
         fp = Path(path)
         fp.parent.mkdir(parents=True, exist_ok=True)
         open_trades = self.load_open_trades()
@@ -61,7 +64,8 @@ class TradeJournal:
                            default: float = 10000.0) -> float:
         try:
             with open(path) as f:
-                return float(json.load(f).get("account_value", default))
+                value = float(json.load(f).get("account_value", default))
+            return value if value > 0 else default
         except Exception:
             return default
 

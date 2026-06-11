@@ -109,7 +109,7 @@ with st.sidebar:
     st.header("Account Sync")
     if st.button("Fetch Live Balance from Zerodha"):
         live_bal, err = fetch_live_balance()
-        if live_bal is not None:
+        if live_bal is not None and live_bal > 0:
             # Update account_state.json
             state["account_value"] = live_bal
             state["last_updated"] = datetime.now(IST).isoformat()
