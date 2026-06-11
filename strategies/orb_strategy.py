@@ -42,11 +42,15 @@ class ORBStrategy(BaseStrategy):
 
     def _get_today_candles(self, df: pd.DataFrame) -> pd.DataFrame:
         today = pd.Timestamp.now(tz=IST).date()
+        # Prefer the 'timestamp' column (set by FreeNSEProvider._normalize)
+        # Fall back to df.index only if it's a genuine DatetimeIndex
+        if "timestamp" in df.columns:
+            ts = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
+            return df[ts.dt.date == today]
         idx = df.index
-        if not hasattr(idx, "date"):
-            # Non-datetime index — convert first
-            idx = pd.DatetimeIndex(idx)
-        if hasattr(idx, "tz") and idx.tz is not None:
+        if not isinstance(idx, pd.DatetimeIndex):
+            return df.iloc[0:0]  # empty — can't determine today's candles
+        if idx.tz is not None:
             dates = idx.tz_convert(IST).date
         else:
             dates = idx.date
