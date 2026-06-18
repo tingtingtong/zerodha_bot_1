@@ -451,20 +451,26 @@ def main():
     # ── Regime-based strategy gate ─────────────────────────────────
     # Only run strategies that suit today's market regime.
     # ORB works in ANY regime — morning breakout doesn't need a trend.
-    # Bull        → EMAPullback + ORB + MeanReversion
-    # Sideways    → ORB only  (MeanReversion disabled — consistently loses in ranging markets)
-    # Weak bear   → ORB only  (EMABreakdown disabled — 8% WR, -₹3,910 all-time, shorts into bullish internals)
-    # Strong bear → ORB + MeanReversion (keep EMABreakdown off until NIFTY shows genuine sustained weakness)
-    # High-vol    → ORB only  (directional EMA strategies too risky)
+    # Bull        → EMAPullback + ORB + MeanReversion + VWAP
+    # Sideways    → ORB + MeanReversion + VWAP (low VIX: skip ORB — mean reversion dominates)
+    # Weak bear   → ORB + VWAP
+    # Strong bear → ORB + MeanReversion + VWAP
+    # High-vol    → ORB only  (directional strategies too risky)
     _REGIME_ALLOWED = {
-        "strong_bull":     {"EMAPullback", "ORB", "MeanReversion"},
-        "weak_bull":       {"EMAPullback", "ORB", "MeanReversion"},
-        "sideways":        {"ORB"},
-        "weak_bear":       {"ORB"},
-        "strong_bear":     {"ORB", "MeanReversion"},
+        "strong_bull":     {"EMAPullback", "ORB", "MeanReversion", "VWAP"},
+        "weak_bull":       {"EMAPullback", "ORB", "MeanReversion", "VWAP"},
+        "sideways":        {"ORB", "MeanReversion", "VWAP"},
+        "weak_bear":       {"ORB", "VWAP"},
+        "strong_bear":     {"ORB", "MeanReversion", "VWAP"},
         "high_volatility": {"ORB"},
     }
     _allowed = _REGIME_ALLOWED.get(regime.regime.value, {"ORB"})
+
+    # VIX < 15 in sideways: mean reversion outperforms breakout — skip ORB
+    _vix_orb_skip = config.get("risk", {}).get("vix_orb_skip_threshold", 15.0)
+    if regime.regime.value == "sideways" and vix < _vix_orb_skip:
+        _allowed = _allowed - {"ORB"}
+        logger.info(f"VIX={vix:.1f} < {_vix_orb_skip} in sideways — ORB skipped, mean reversion leads")
     _gated   = [s for s in strategies if s.strategy_name not in _allowed]
     strategies = [s for s in strategies if s.strategy_name in _allowed]
     if _gated:

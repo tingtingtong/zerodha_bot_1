@@ -31,7 +31,8 @@ class ORBStrategy(BaseStrategy):
     MAX_HOLD_CANDLES = 12        # 3 hours max hold (trending regimes)
     MAX_HOLD_CANDLES_SIDEWAYS = 6  # 1.5 hours in sideways — breakouts reverse faster
     NO_TRADE_BEFORE = "09:45"
-    NO_TRADE_AFTER = "12:30"  # ORB setups go stale by afternoon
+    NO_TRADE_AFTER = "12:30"         # ORB setups go stale by afternoon
+    NO_TRADE_AFTER_SIDEWAYS = "10:30"  # breakouts in sideways markets go stale much faster
 
     @property
     def strategy_name(self) -> str:
@@ -65,7 +66,8 @@ class ORBStrategy(BaseStrategy):
             return self._no_trade(symbol, "insufficient_data")
 
         now_str = pd.Timestamp.now(tz=IST).strftime("%H:%M")
-        if now_str < self.NO_TRADE_BEFORE or now_str > self.NO_TRADE_AFTER:
+        no_trade_after = self.NO_TRADE_AFTER_SIDEWAYS if regime == "sideways" else self.NO_TRADE_AFTER
+        if now_str < self.NO_TRADE_BEFORE or now_str > no_trade_after:
             return self._no_trade(symbol, f"outside_window_{now_str}")
 
         # ── Opening range from today's first 2 candles ──────────────

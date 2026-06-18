@@ -35,6 +35,7 @@ risk:
   vix_reduce_threshold: 22.0   # cautious sizing above this
   vix_halt_threshold: 28.0     # no new trades above this
   vix_kill_threshold: 35.0     # close all positions above this
+  vix_orb_skip_threshold: 15.0 # skip ORB in sideways below this — mean reversion dominates low-VIX markets
 
 strategy:
   active:
@@ -43,6 +44,7 @@ strategy:
     # ema_breakdown disabled — 8% WR, -₹3,910 loss across 24 trades
     - "mean_reversion"
     # etf_momentum disabled — backtests show consistent losses (win rate 34%, PF 0.66)
+    - "vwap"   # VWAP reversion — low-VIX/sideways strategy. Disable by commenting this line out.
   primary_timeframe: "15m"
   daily_trend_filter: true
   no_trade_before_ist: "09:45"
