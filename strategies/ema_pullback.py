@@ -27,7 +27,8 @@ class EMAPullbackStrategy(BaseStrategy):
         return "15m"
 
     def generate_signal(self, symbol, df_primary, df_daily,
-                        regime_bullish, capital_per_trade, charges_estimate) -> TradeSetup:
+                        regime_bullish, capital_per_trade, charges_estimate,
+                        regime: str = "") -> TradeSetup:
 
         # Regime gate — prefer bull markets, but allow longs in weak_bear/sideways
         # if the individual stock is in its own uptrend (above daily EMA20).

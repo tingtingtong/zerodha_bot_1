@@ -28,7 +28,8 @@ class ORBStrategy(BaseStrategy):
     MAX_RANGE_PCT = 0.030   # 3.0% maximum range — filters gap/circuit days
     MIN_VOL_MULT = 0.8      # breakout candle volume >= 0.8x average
     MIN_RR = 1.5
-    MAX_HOLD_CANDLES = 12   # 3 hours max hold
+    MAX_HOLD_CANDLES = 12        # 3 hours max hold (trending regimes)
+    MAX_HOLD_CANDLES_SIDEWAYS = 6  # 1.5 hours in sideways — breakouts reverse faster
     NO_TRADE_BEFORE = "09:45"
     NO_TRADE_AFTER = "12:30"  # ORB setups go stale by afternoon
 
@@ -57,7 +58,8 @@ class ORBStrategy(BaseStrategy):
         return df[dates == today]
 
     def generate_signal(self, symbol, df_primary, df_daily,
-                        regime_bullish, capital_per_trade, charges_estimate) -> TradeSetup:
+                        regime_bullish, capital_per_trade, charges_estimate,
+                        regime: str = "") -> TradeSetup:
 
         if df_primary is None or len(df_primary) < 5:
             return self._no_trade(symbol, "insufficient_data")
@@ -163,6 +165,7 @@ class ORBStrategy(BaseStrategy):
 
         direction = "long" if long_bo else "short"
         quality = "A" if (vol_mult >= 2.0 and range_pct >= 0.015) else "B"
+        hold_candles = self.MAX_HOLD_CANDLES_SIDEWAYS if regime == "sideways" else self.MAX_HOLD_CANDLES
 
         return TradeSetup(
             signal=signal, symbol=symbol,
@@ -172,6 +175,6 @@ class ORBStrategy(BaseStrategy):
             risk_amount=round(qty * rps, 2), reward_risk_ratio=round(net_rr, 2),
             setup_quality=quality,
             reason=f"orb_{direction}_range{range_pct:.1%}_vol{vol_mult:.1f}x_sl_{vol_regime}",
-            max_hold_candles=self.MAX_HOLD_CANDLES,
+            max_hold_candles=hold_candles,
             strategy_name=self.strategy_name, is_valid=True,
         )

@@ -55,6 +55,7 @@ class BaseStrategy(ABC):
         self, symbol: str, df_primary: pd.DataFrame,
         df_daily: pd.DataFrame, regime_bullish: bool,
         capital_per_trade: float, charges_estimate: float,
+        regime: str = "",
     ) -> TradeSetup:
         pass
 

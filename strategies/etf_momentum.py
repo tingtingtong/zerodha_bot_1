@@ -21,7 +21,8 @@ class ETFMomentumStrategy(BaseStrategy):
         return "15m"
 
     def generate_signal(self, symbol, df_primary, df_daily,
-                        regime_bullish, capital_per_trade, charges_estimate) -> TradeSetup:
+                        regime_bullish, capital_per_trade, charges_estimate,
+                        regime: str = "") -> TradeSetup:
 
         if symbol not in ETF_SYMBOLS:
             return self._no_trade(symbol, "not_an_etf_symbol")

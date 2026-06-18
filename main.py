@@ -119,11 +119,14 @@ def main():
                 ["tasklist", "/FI", f"PID eq {existing_pid}", "/NH", "/FO", "CSV"],
                 capture_output=True, text=True,
             ).stdout
-            if str(existing_pid) in out:
+            # Verify both the PID and that it's a python process (guards against PID reuse)
+            if str(existing_pid) in out and "python" in out.lower():
                 logger.warning(
                     f"Bot already running (PID {existing_pid}) — exiting to prevent duplicate trades."
                 )
                 sys.exit(0)
+            else:
+                logger.info(f"Stale PID file (PID {existing_pid} no longer running) — clearing lock.")
         except Exception:
             pass  # stale PID file — safe to overwrite
     pid_file.write_text(str(os.getpid()))
@@ -604,6 +607,7 @@ def main():
                     regime_bullish=regime_bullish,
                     capital_per_trade=risk.sizer.max_per_trade(),
                     charges_estimate=charges_est,
+                    regime=regime.regime.value,
                 )
 
                 if not setup.is_valid or setup.signal.value == "no_trade":
