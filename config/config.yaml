@@ -80,6 +80,10 @@ market_research:
     - "RITES"        # recent #8:  63% WR, Sharpe 4.4,  +1997
     - "PIIND"        # recent #9:  50% WR, Sharpe 5.0,  +1800
     - "TITAN"        # recent #10: 50% WR, Sharpe 4.9,  +1789
+    - "JSWSTEEL"     # VWAP whitelist: 69% WR, PF 2.84, +6,111 (Jun25-Jun26 backtest)
+    - "TATASTEEL"    # VWAP whitelist: 62% WR, PF 3.00, +5,489
+    - "GODREJCP"     # VWAP whitelist: 56% WR, PF 1.68, +5,069 (PASS)
+    - "BAJAJFINSV"   # VWAP whitelist: 58% WR, PF 1.46, +2,734 (PASS)
     - "RAILTEL"      # recent #11: 44% WR, Sharpe 3.2,  +1698
     - "KEI"          # recent #13: 57% WR, Sharpe 8.9,  +1588
     - "BRIGADE"      # recent #15: 50% WR, Sharpe 4.9,  +1528
