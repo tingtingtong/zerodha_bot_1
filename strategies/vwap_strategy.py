@@ -29,6 +29,10 @@ from .base_strategy import BaseStrategy, TradeSetup, Signal
 IST = pytz.timezone("Asia/Kolkata")
 logger = logging.getLogger(__name__)
 
+# Stocks where VWAP reversion is statistically reliable (backtested Jun 2025–Jun 2026).
+# Heavy institutional volume / range-bound behaviour causes price to anchor to VWAP.
+VWAP_WHITELIST = {"JSWSTEEL", "TATASTEEL", "GODREJCP", "TITAN", "COFORGE", "BAJAJFINSV", "DIVISLAB"}
+
 
 class VWAPStrategy(BaseStrategy):
 
@@ -54,17 +58,22 @@ class VWAPStrategy(BaseStrategy):
         return "15m"
 
     def _calc_vwap(self, df: pd.DataFrame) -> float:
-        """Calculate today's running VWAP from 15m candles."""
-        today = pd.Timestamp.now(tz=IST).date()
+        """Calculate VWAP for the most recent trading day in df.
+
+        Uses the last candle's date rather than wall-clock time so this
+        works correctly in both live trading and backtesting.
+        """
         if "timestamp" in df.columns:
             ts = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert(IST)
-            today_df = df[ts.dt.date == today]
+            last_date = ts.iloc[-1].date()
+            today_df = df[ts.dt.date == last_date]
         else:
             idx = df.index
             if not isinstance(idx, pd.DatetimeIndex):
                 return float("nan")
             dates = idx.tz_convert(IST).date if idx.tz is not None else idx.date
-            today_df = df[dates == today]
+            last_date = dates[-1]
+            today_df = df[[d == last_date for d in dates]]
 
         if len(today_df) < 2:
             return float("nan")
@@ -80,10 +89,19 @@ class VWAPStrategy(BaseStrategy):
                         regime_bullish, capital_per_trade, charges_estimate,
                         regime: str = "") -> TradeSetup:
 
+        if symbol not in VWAP_WHITELIST:
+            return self._no_trade(symbol, "not_in_vwap_whitelist")
+
         if df_primary is None or len(df_primary) < 20:
             return self._no_trade(symbol, "insufficient_data")
 
-        now_str = pd.Timestamp.now(tz=IST).strftime("%H:%M")
+        # Live: use wall clock. Backtest: use last candle's timestamp.
+        if "timestamp" in df_primary.columns:
+            last_ts = pd.to_datetime(df_primary["timestamp"].iloc[-1], utc=True).tz_convert(IST)
+            is_live = last_ts.date() == pd.Timestamp.now(tz=IST).date()
+            now_str = pd.Timestamp.now(tz=IST).strftime("%H:%M") if is_live else last_ts.strftime("%H:%M")
+        else:
+            now_str = pd.Timestamp.now(tz=IST).strftime("%H:%M")
         if now_str < self.NO_TRADE_BEFORE or now_str > self.NO_TRADE_AFTER:
             return self._no_trade(symbol, f"outside_window_{now_str}")
 
