@@ -84,6 +84,18 @@ market_research:
     - "TATASTEEL"    # VWAP whitelist: 62% WR, PF 3.00, +5,489
     - "GODREJCP"     # VWAP whitelist: 56% WR, PF 1.68, +5,069 (PASS)
     - "BAJAJFINSV"   # VWAP whitelist: 58% WR, PF 1.46, +2,734 (PASS)
+    - "CUMMINSIND"   # VWAP tier1: 61% WR, PF 3.51, +9,551
+    - "FORTIS"       # VWAP tier1: 70% WR, PF 3.63, +5,278
+    - "KPRMILL"      # VWAP tier1: 60% WR, PF 3.22, +5,257
+    - "UPL"          # VWAP tier1: 55% WR, PF 2.40, +4,995
+    - "GLAXO"        # VWAP tier1: 53% WR, PF 2.40, +4,366
+    - "CHOLAFIN"     # VWAP tier1: 57% WR, PF 2.16, +4,964
+    - "ABCAPITAL"    # VWAP tier1: 62% WR, PF 2.06, +4,621
+    - "TIINDIA"      # VWAP tier1: 67% WR, PF 2.67, +3,330
+    - "STAR"         # VWAP tier1: 64% WR, PF 2.46, +3,412
+    - "SAIL"         # VWAP tier1: 62% WR, PF 2.44, +3,994
+    - "TVSMOTOR"     # VWAP tier1: 53% WR, PF 2.33, +3,695
+    - "RADICO"       # VWAP tier1: 57% WR, PF 2.13, +3,637
     - "RAILTEL"      # recent #11: 44% WR, Sharpe 3.2,  +1698
     - "KEI"          # recent #13: 57% WR, Sharpe 8.9,  +1588
     - "BRIGADE"      # recent #15: 50% WR, Sharpe 4.9,  +1528

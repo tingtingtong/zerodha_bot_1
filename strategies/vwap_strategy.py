@@ -31,7 +31,13 @@ logger = logging.getLogger(__name__)
 
 # Stocks where VWAP reversion is statistically reliable (backtested Jun 2025–Jun 2026).
 # Heavy institutional volume / range-bound behaviour causes price to anchor to VWAP.
-VWAP_WHITELIST = {"JSWSTEEL", "TATASTEEL", "GODREJCP", "TITAN", "COFORGE", "BAJAJFINSV", "DIVISLAB"}
+VWAP_WHITELIST = {
+    # Original 7 — backtested Jun 2025–Jun 2026 (50-stock scan)
+    "JSWSTEEL", "TATASTEEL", "GODREJCP", "TITAN", "COFORGE", "BAJAJFINSV", "DIVISLAB",
+    # Tier 1 additions — PF > 2.0 from full NIFTY200 scan (Jun 2025–Jun 2026)
+    "CUMMINSIND", "FORTIS", "KPRMILL", "UPL", "GLAXO", "CHOLAFIN",
+    "ABCAPITAL", "TIINDIA", "STAR", "SAIL", "TVSMOTOR", "RADICO",
+}
 
 
 class VWAPStrategy(BaseStrategy):
