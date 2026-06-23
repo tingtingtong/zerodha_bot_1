@@ -2,7 +2,14 @@
 ZerodhaBot Watchdog — runs in the background, starts the bot at 9:00 AM IST
 every weekday and restarts it if it crashes before 15:30 IST.
 Add this to the Windows Startup folder to run on login.
+
+Usage:
+    python watchdog.py              # paper mode (default)
+    python watchdog.py --mode paper
+    python watchdog.py --mode semi_auto
+    python watchdog.py --mode live
 """
+import argparse
 import subprocess
 import sys
 import time
@@ -12,6 +19,11 @@ from pathlib import Path
 import pytz
 sys.path.insert(0, str(Path(__file__).parent))
 from utils.time_utils import is_trading_day
+
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument("--mode", default="paper", choices=["paper", "semi_auto", "live"])
+_args, _ = _parser.parse_known_args()
+BOT_MODE = _args.mode
 
 LOG_FILE = Path(__file__).parent / "logs" / "watchdog.log"
 LOG_FILE.parent.mkdir(exist_ok=True)
@@ -124,10 +136,10 @@ def ensure_zerodha_login() -> bool:
 
 def run_bot() -> int:
     log_path = bot_log_path()
-    logger.info(f"Starting bot -> log: {log_path}")
+    logger.info(f"Starting bot (mode={BOT_MODE}) -> log: {log_path}")
     with open(log_path, "a", encoding="utf-8") as fout:
         proc = subprocess.Popen(
-            [PYTHON, BOT_SCRIPT, "--mode", "paper"],
+            [PYTHON, BOT_SCRIPT, "--mode", BOT_MODE],
             stdout=fout, stderr=fout,
             cwd=str(Path(__file__).parent),
         )
@@ -173,13 +185,20 @@ def main():
             logger.warning("Login failed — retrying in 60s...")
             time.sleep(60)
             continue
-        run_bot()
+        rc = run_bot()
 
-        # After bot exits, check if we should restart
+        # Only restart on crash (non-zero exit) before market close.
+        # A clean exit (rc=0) means the bot finished normally — force exit or
+        # kill switch — do NOT restart or it will loop until 15:30.
         now = now_ist()
-        if now.hour * 60 + now.minute < STOP_HOUR * 60 + STOP_MIN:
-            logger.warning("Bot exited before 15:30 — restarting in 30s...")
+        still_trading = now.hour * 60 + now.minute < STOP_HOUR * 60 + STOP_MIN
+        if rc != 0 and still_trading:
+            logger.warning(f"Bot crashed (exit {rc}) before 15:30 — restarting in 30s...")
             time.sleep(30)
+        elif still_trading:
+            logger.info("Bot exited cleanly before 15:30 (force exit / kill switch) — not restarting.")
+            wait = seconds_until(START_HOUR, START_MIN)
+            time.sleep(min(wait + 30, 600))
         else:
             logger.info("Bot finished after market close — done for today.")
             wait = seconds_until(START_HOUR, START_MIN)
