@@ -33,11 +33,35 @@ st.title("📈 ZerodhaBot — Live Dashboard")
 ROOT_DIR = Path(__file__).parent.parent
 
 
+STARTING_CAPITAL = 200_000
+
+def _cumulative_pnl_from_trades() -> float:
+    """Calculate true account value from starting capital + all trade P&Ls.
+    More reliable than account_state.json which can corrupt on ghost trades."""
+    total = 0.0
+    logs_dir = ROOT_DIR / "journaling" / "logs"
+    for f in sorted(logs_dir.glob("trades_*.json")):
+        try:
+            for t in json.load(open(f)):
+                total += t.get("net_pnl") or 0
+        except Exception:
+            pass
+    return total
+
+
 def load_account_state():
     fp = ROOT_DIR / "journaling" / "account_state.json"
     try:
         with open(fp) as f:
-            return json.load(f)
+            state = json.load(f)
+        # Sanity-check: if account_value looks corrupted (dropped >20% from
+        # what trade logs imply), use the trade-log-derived value instead.
+        trade_derived = STARTING_CAPITAL + _cumulative_pnl_from_trades()
+        stored = state.get("account_value", 0)
+        if stored > 0 and abs(stored - trade_derived) / max(trade_derived, 1) > 0.20:
+            state["account_value"] = round(trade_derived, 2)
+            state["_corrected"] = True
+        return state
     except Exception:
         return {"account_value": 0, "daily_pnl": 0, "last_updated": "N/A"}
 
@@ -128,8 +152,12 @@ with st.sidebar:
 if data_stale:
     st.warning(f"Showing cached data from {last_updated[:10]} — bot has not run today. Start the bot or use 'Fetch Live Balance' in the sidebar.")
 
+if state.get("_corrected"):
+    st.warning("Account value auto-corrected from trade logs (account_state.json was corrupted). "
+               "True value = Starting ₹2,00,000 + cumulative trade P&L.")
+
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Account Value", f"₹{account_value:,.2f}",
+col1.metric("Account Value (trade-derived)", f"₹{account_value:,.2f}",
             delta=f"₹{daily_pnl:+,.2f} today")
 col2.metric("Daily P&L", f"₹{daily_pnl:+,.2f}",
             delta=f"{(daily_pnl/account_value*100):+.2f}%" if account_value else "0%")
