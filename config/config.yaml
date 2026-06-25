@@ -45,6 +45,9 @@ strategy:
     - "mean_reversion"
     # etf_momentum disabled — backtests show consistent losses (win rate 34%, PF 0.66)
     - "vwap"   # VWAP reversion — low-VIX/sideways strategy. Disable by commenting this line out.
+    - "supertrend_rsi"  # Supertrend+RSI — whitelist: ONGC, TITAN, BHEL. Blocked in sideways/high-vol.
+    # inside_bar_breakout disabled — pending backtest validation (Jun 2026)
+    # adx_momentum disabled — pending backtest validation (Jun 2026)
   primary_timeframe: "15m"
   daily_trend_filter: true
   no_trade_before_ist: "09:45"

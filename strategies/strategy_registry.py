@@ -6,6 +6,9 @@ from .etf_momentum import ETFMomentumStrategy
 from .mean_reversion import MeanReversionStrategy
 from .orb_strategy import ORBStrategy
 from .vwap_strategy import VWAPStrategy
+from .supertrend_rsi import SupertrendRSIStrategy
+from .inside_bar_breakout import InsideBarBreakoutStrategy
+from .adx_momentum import ADXMomentumStrategy
 
 _REGISTRY: Dict[str, BaseStrategy] = {
     "ema_pullback": EMAPullbackStrategy(),
@@ -14,6 +17,9 @@ _REGISTRY: Dict[str, BaseStrategy] = {
     "mean_reversion": MeanReversionStrategy(),
     "orb": ORBStrategy(),
     "vwap": VWAPStrategy(),
+    "supertrend_rsi": SupertrendRSIStrategy(),
+    "inside_bar_breakout": InsideBarBreakoutStrategy(),
+    "adx_momentum": ADXMomentumStrategy(),
 }
 
 
