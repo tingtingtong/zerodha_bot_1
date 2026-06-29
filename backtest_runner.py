@@ -158,13 +158,63 @@ def run_backtest(
 
         # Save results
         import json
+        import dataclasses
         out_dir = Path(config.get("backtesting", {}).get("results_dir", "backtesting/results"))
         out_dir.mkdir(parents=True, exist_ok=True)
         out_file = out_dir / f"backtest_{symbol}_{strategy_name}_{start}_{end}.json"
         with open(out_file, "w") as f:
-            import dataclasses
             json.dump(dataclasses.asdict(report), f, indent=2)
         logger.info(f"Results saved: {out_file}")
+
+        # MLflow tracking
+        try:
+            import mlflow
+            mlflow.set_experiment(strategy_name)
+            with mlflow.start_run(run_name=f"{symbol}_{start}_{end}"):
+                # Parameters
+                mlflow.log_params({
+                    "symbol": symbol,
+                    "strategy": strategy_name,
+                    "start": start,
+                    "end": end,
+                    "initial_capital": initial_capital,
+                    "interval": primary_interval,
+                })
+                # Metrics
+                mlflow.log_metrics({
+                    "total_trades": report.total_trades,
+                    "winning_trades": report.winning_trades,
+                    "losing_trades": report.losing_trades,
+                    "win_rate": report.win_rate,
+                    "profit_factor": report.profit_factor,
+                    "expectancy": report.expectancy,
+                    "net_pnl": report.net_pnl,
+                    "gross_profit": report.gross_profit,
+                    "gross_loss": report.gross_loss,
+                    "total_charges": report.total_charges,
+                    "charge_drag_pct": report.charge_drag_pct,
+                    "avg_win": report.avg_win,
+                    "avg_loss": report.avg_loss,
+                    "largest_win": report.largest_win,
+                    "largest_loss": report.largest_loss,
+                    "max_drawdown": report.max_drawdown,
+                    "max_drawdown_pct": report.max_drawdown_pct,
+                    "max_consecutive_losses": report.max_consecutive_losses,
+                    "max_consecutive_wins": report.max_consecutive_wins,
+                    "sharpe_ratio": report.sharpe_ratio,
+                    "pnl_without_charges": report.pnl_without_charges,
+                    "passed": int(report.passed),
+                })
+                # Tags
+                mlflow.set_tags({
+                    "verdict": "PASS" if report.passed else "FAIL",
+                    "failure_reasons": ", ".join(report.failure_reasons) if report.failure_reasons else "none",
+                })
+                # Artifact
+                mlflow.log_artifact(str(out_file))
+            logger.info(f"MLflow run logged under experiment '{strategy_name}'")
+        except Exception as e:
+            logger.warning(f"MLflow logging skipped: {e}")
 
 
 def simulate_outcome(setup, qty: int, future_candles, charges: float,

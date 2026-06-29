@@ -1,5 +1,5 @@
 """
-Mean Reversion Strategy — for WEAK_BEAR and SIDEWAYS market regimes.
+Mean Reversion Strategy — for WEAK_BEAR and STRONG_BEAR market regimes only.
 
 Logic:
 - Stock has pulled back hard (RSI oversold < 35, price below 20 EMA)
@@ -15,7 +15,11 @@ Works when EMA pullback won't fire (bearish/sideways regime).
 
 import numpy as np
 import logging
+import pytz
+import pandas as pd
 from .base_strategy import BaseStrategy, TradeSetup, Signal
+
+_IST = pytz.timezone("Asia/Kolkata")
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +46,18 @@ class MeanReversionStrategy(BaseStrategy):
                         regime_bullish, capital_per_trade, charges_estimate,
                         regime: str = "") -> TradeSetup:
 
-        # No regime gate — mean reversion fires whenever RSI is oversold regardless of regime
+        # Regime gate: only fire in bear regimes where genuine oversold bounces occur.
+        # Sideways blocks here — confirmed 4+ consecutive losing weeks in sideways.
+        if regime.lower() in ("sideways", "strong_bull", "weak_bull"):
+            return self._no_trade(symbol, f"regime_{regime}_not_suitable")
+
+        # Time gate: block the 09:15–09:44 window to avoid first-candle whipsaws.
+        if "timestamp" in df_primary.columns:
+            last_ts = pd.to_datetime(df_primary["timestamp"].iloc[-1], utc=True).tz_convert(_IST)
+            if last_ts.date() == pd.Timestamp.now(tz=_IST).date():
+                if last_ts.strftime("%H:%M") < "09:45":
+                    return self._no_trade(symbol, "pre_0945_window_blocked")
+
         if df_primary is None or len(df_primary) < 30:
             return self._no_trade(symbol, "insufficient_data")
         if df_daily is None or len(df_daily) < 22:
