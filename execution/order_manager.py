@@ -227,6 +227,10 @@ class OrderManager:
             resp = self.broker.place_order(req)
             if resp.status == OrderStatus.COMPLETE:
                 exit_price = resp.avg_fill_price
+            elif exit_price <= 0:
+                # Broker rejected exit (e.g. price=0 passed in) — use entry_price so P&L
+                # doesn't corrupt account_value with fake short profits.
+                exit_price = trade.entry_price
 
         partial_pnl = sum(pe.pnl for pe in trade.partial_exits)
         if trade.direction == "short":
@@ -257,8 +261,13 @@ class OrderManager:
 
     def emergency_exit_all(self, reason: str = "emergency"):
         logger.critical(f"EMERGENCY EXIT ALL: {reason}")
+        broker_positions = {p.symbol: p for p in self.broker.get_positions()}
         for tid in list(self.active_trades.keys()):
-            self.close_trade(tid, 0.0, reason)
+            trade = self.active_trades[tid]
+            pos = broker_positions.get(trade.symbol)
+            exit_price = (pos.current_price if pos and pos.current_price > 0
+                          else trade.entry_price)
+            self.close_trade(tid, exit_price, reason)
         self.broker.exit_all_positions()
 
     def tick(self, symbol: str, current_price: float):
