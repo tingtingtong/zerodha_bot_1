@@ -6,6 +6,9 @@
 
 cd ~/zerodhaBot || exit 1
 
+# Allow git to run in this directory regardless of owner (needed when cron user differs)
+git config --global --add safe.directory "$(pwd)" 2>/dev/null || true
+
 BEFORE=$(git rev-parse HEAD)
 git fetch origin master --quiet 2>&1
 AFTER=$(git rev-parse origin/master)
@@ -17,6 +20,7 @@ fi
 
 # New commits — pull and log what changed
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] New commits found. Pulling..."
+git stash --quiet 2>/dev/null || true   # stash any local changes so pull never blocks
 git pull --ff-only origin master 2>&1
 
 COMMITS=$(git log --oneline "$BEFORE".."$AFTER" 2>/dev/null | head -5)
