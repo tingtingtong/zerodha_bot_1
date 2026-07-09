@@ -514,6 +514,7 @@ def main():
                 ).total_seconds())
                 logger.info(f"Pre-market: waiting {wait_secs/60:.1f} min for market open at 09:15...")
                 time.sleep(min(wait_secs, 60))
+                _last_data_time = time.time()  # prevent stale-data kill switch at market open
                 continue
             logger.info("Market closed. Running EOD tasks.")
             break
