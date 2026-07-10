@@ -128,39 +128,10 @@ def ensure_zerodha_login() -> bool:
     if result.returncode == 0:
         _login_done_date = today
         logger.info("Zerodha auto-login succeeded.")
-        sync_token_to_gcp()
         return True
     else:
         logger.error(f"Zerodha auto-login FAILED (exit {result.returncode}) — check logs/autologin_{today}.log")
         return False
-
-
-def sync_token_to_gcp() -> None:
-    """Copy today's Zerodha token to GCP so the cloud bot can use it."""
-    token_path = ROOT / "config" / ".zerodha_token.json"
-    if not token_path.exists():
-        logger.warning("GCP token sync: token file not found, skipping.")
-        return
-    ssh_key    = Path.home() / ".ssh" / "google_compute_engine"
-    gcp_user   = "shetty_nith"
-    gcp_host   = "35.208.234.101"
-    gcp_dest   = f"{gcp_user}@{gcp_host}:/home/{gcp_user}/zerodhaBot/config/.zerodha_token.json"
-    cmd = [
-        "scp",
-        "-i", str(ssh_key),
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "ConnectTimeout=10",
-        str(token_path),
-        gcp_dest,
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0:
-            logger.info("GCP token sync: token uploaded to GCP successfully.")
-        else:
-            logger.warning(f"GCP token sync failed: {result.stderr.strip()}")
-    except Exception as e:
-        logger.warning(f"GCP token sync error: {e}")
 
 
 def run_bot() -> int:
