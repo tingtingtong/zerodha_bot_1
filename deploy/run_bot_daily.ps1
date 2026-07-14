@@ -3,6 +3,7 @@ $DATE = Get-Date -Format "yyyy-MM-dd"
 $PYTHON = "C:\Users\nithi\AppData\Local\Programs\Python\Python312\python.exe"
 $LOG = "C:\Users\nithi\zerodhaBot\journaling\logs\scheduler_$DATE.log"
 $BOT_MODE = "paper"
+$env:BOT_INSTANCE = "LOCAL"
 
 "[$(Get-Date)] Starting ZerodhaBot (mode: $BOT_MODE)..." | Out-File -Append $LOG
 
@@ -53,6 +54,19 @@ from utils.notification import TelegramNotifier
 TelegramNotifier().send('🚨 <b>ZerodhaBot auto-login FAILED</b>\nBot did not start. Check logs.')
 "
     exit 1
+}
+
+# Step 2.5: Sync Kite token to GCP so both local and GCP bots share the same session
+"[$(Get-Date)] Syncing Kite token to GCP..." | Out-File -Append $LOG
+$_gcmd = Get-Command gcloud -ErrorAction SilentlyContinue
+$GCLOUD = if ($_gcmd) { $_gcmd.Source } else { "C:\Users\nithi\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" }
+& $GCLOUD compute scp --zone=us-central1-a --quiet `
+    "C:\Users\nithi\zerodhaBot\config\.zerodha_token.json" `
+    "shetty_nith@zerodhabot:/home/shetty_nith/zerodhaBot/config/.zerodha_token.json" 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    "[$(Get-Date)] Token synced to GCP OK." | Out-File -Append $LOG
+} else {
+    "[$(Get-Date)] Token sync to GCP failed (GCP will do its own login)." | Out-File -Append $LOG
 }
 
 # Step 3: Start Telegram commander in background

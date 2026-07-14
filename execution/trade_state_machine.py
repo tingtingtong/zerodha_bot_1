@@ -1,4 +1,5 @@
 import logging
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
@@ -95,6 +96,7 @@ class TradeRecord:
     state_history: List[str] = field(default_factory=list)
     error_message: Optional[str] = None
     remaining_qty: int = 0
+    bot_source: str = field(default_factory=lambda: os.getenv("BOT_INSTANCE", "unknown").lower())
 
     def __post_init__(self):
         self.remaining_qty = self.entry_qty
@@ -155,4 +157,5 @@ class TradeRecord:
             "candles_held": self.candles_held,
             "regime_at_entry": self.regime_at_entry,
             "direction": self.direction,
+            "bot_source": self.bot_source,
         }

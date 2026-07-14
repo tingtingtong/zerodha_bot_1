@@ -171,9 +171,11 @@ def generate_daily_report(
     losses = [t for t in closed if float(t.get("net_pnl", 0)) <= 0]
     net_pnl   = sum(float(t.get("net_pnl", 0)) for t in closed)
     charges   = sum(float(t.get("charges", 0)) for t in closed)
+    import os
     today = datetime.now(IST).strftime("%Y-%m-%d")
     return {
         "date": today,
+        "bot_source": os.getenv("BOT_INSTANCE", "unknown").lower(),
         "trades": len(closed),
         "wins": len(wins),
         "losses": len(losses),
@@ -204,7 +206,7 @@ def format_daily_report(report: dict) -> str:
         opt_line = f"\n  Options P&L    : Rs.{sign}{report['options_pnl']:>10,.2f}  ({report['options_trades']} trades)"
     lines = [
         "=" * 60,
-        f"  ZERODHA BOT — DAILY REPORT  {report.get('date', '')}",
+        f"  ZERODHA BOT — DAILY REPORT  {report.get('date', '')}  [{report.get('bot_source', '?').upper()}]",
         "=" * 60,
         f"  Account Value  : Rs.{report['account_value']:>12,.2f}",
         f"  Daily P&L      : Rs.{report['daily_pnl']:>+12,.2f}",

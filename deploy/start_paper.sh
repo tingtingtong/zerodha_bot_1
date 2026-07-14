@@ -8,6 +8,7 @@
 cd ~/zerodhaBot
 source venv/bin/activate
 
+export BOT_INSTANCE="GCP"
 DATE=$(date +%Y-%m-%d)
 LOG="journaling/logs/bot_${DATE}.log"
 mkdir -p journaling/logs
@@ -23,8 +24,8 @@ sudo timedatectl set-ntp true 2>/dev/null || true
 # Headless Zerodha login (no Playwright/browser — works on GCP)
 # Skips automatically if today's token already exists
 # ------------------------------------------------------------------
-echo "[$(date)] Running headless login (--force)..." >> "$LOG"
-python brokers/zerodha_headless_login.py --force >> "$LOG" 2>&1
+echo "[$(date)] Running headless login..." >> "$LOG"
+python brokers/zerodha_headless_login.py >> "$LOG" 2>&1
 LOGIN_CODE=$?
 
 if [ $LOGIN_CODE -ne 0 ]; then
