@@ -272,10 +272,13 @@ class OrderManager:
 
     def tick(self, symbol: str, current_price: float):
         """Call on every price/candle update per active trade."""
+        now = datetime.now(IST)
         for tid, trade in list(self.active_trades.items()):
             if trade.symbol != symbol:
                 continue
-            trade.candles_held += 1
+            if trade.entry_time:
+                interval_secs = trade.candle_interval_minutes * 60
+                trade.candles_held = int((now - trade.entry_time).total_seconds() / interval_secs)
 
             is_short = trade.direction == "short"
 

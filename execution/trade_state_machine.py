@@ -89,6 +89,7 @@ class TradeRecord:
     charges: Optional[float] = None
     net_pnl: Optional[float] = None
     max_hold_candles: int = 16
+    candle_interval_minutes: int = 15  # bar size — used to compute elapsed bars from wall time
     candles_held: int = 0
     partial_exits: List[PartialExit] = field(default_factory=list)
     state_history: List[str] = field(default_factory=list)
