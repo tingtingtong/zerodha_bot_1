@@ -186,3 +186,14 @@ dashboard:
   host: "localhost"
   port: 8501
   auto_refresh_seconds: 30
+
+swing_momentum:
+  # Monthly momentum sleeve — PAPER ONLY, runs separately: python -m swing.momentum_rebalancer
+  # Backtest 2017-26 (bias-adjusted universe): ~18% CAGR, ~-24% max drawdown, vs NIFTY ~11% / -38%.
+  enabled: true
+  capital: 2000000          # separate paper sleeve, independent of the intraday account
+  top_n: 25
+  liquid_top: 100           # eligible = top-100 by 126-day traded value
+  regime_filter: true       # NIFTY < 200-DMA -> hold cash
+  slippage_pct: 0.001
+

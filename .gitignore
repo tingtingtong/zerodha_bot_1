@@ -45,3 +45,8 @@ Thumbs.db
 # MLflow
 mlflow.db
 mlruns/
+
+# swing momentum sleeve (paper) runtime state
+journaling/swing_state.json
+journaling/swing/
+journaling/swing_run.log
