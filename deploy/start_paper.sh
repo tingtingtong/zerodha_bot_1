@@ -41,7 +41,17 @@ except Exception: pass
     exit 1
 fi
 
-echo "[$(date)] Login OK. Starting bot..." >> "$LOG"
+echo "[$(date)] Login OK." >> "$LOG"
+
+# Adaptive strategy evaluation — Mondays, or whenever no state exists yet.
+# Uses this machine's own trade logs; adaptive_state.json is gitignored so deploys never overwrite it.
+if [ "$(date +%u)" = "1" ] || [ ! -f adaptive/adaptive_state.json ]; then
+    echo "[$(date)] Running adaptive strategy evaluator..." >> "$LOG"
+    python -m adaptive.strategy_evaluator --weeks 4 >> "$LOG" 2>&1 \
+        || echo "[$(date)] Evaluator failed (non-fatal, bot continues)" >> "$LOG"
+fi
+
+echo "[$(date)] Starting bot..." >> "$LOG"
 
 # Run bot in paper mode with Zerodha data
 python main.py --mode paper >> "$LOG" 2>&1
