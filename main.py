@@ -180,6 +180,45 @@ def main():
     notifier = TelegramNotifier()
     audit = AuditLogger(config["reporting"]["journal_dir"])
 
+    # ── Adaptive strategy layer ────────────────────────────────────
+    # Reads weekly evaluation state: disables underperformers, weights capital allocation
+    strategy_weights = {}
+    try:
+        from adaptive.strategy_evaluator import get_active_strategies_adaptive
+        configured_names = config["strategy"].get("active", [])
+        active_names_adapt, strategy_weights, disabled_adaptive = get_active_strategies_adaptive(configured_names)
+        if disabled_adaptive:
+            # Normalize: strip underscores + lowercase for matching
+            active_set = {n.lower().replace("_", "") for n in active_names_adapt}
+            strategies = [s for s in strategies if s.strategy_name.lower().replace("_", "") in active_set]
+            logger.info(
+                f"Adaptive layer: DISABLED={disabled_adaptive} | "
+                f"Weights={strategy_weights}"
+            )
+            if config["notifications"]["enabled"]:
+                notifier.send(
+                    f"Adaptive Layer Active\n"
+                    f"Disabled: {', '.join(disabled_adaptive)}\n"
+                    f"Weights: {', '.join(f'{k}={v:.1f}x' for k, v in strategy_weights.items())}"
+                )
+        else:
+            logger.info(f"Adaptive layer: all strategies active | Weights={strategy_weights}")
+    except Exception as e:
+        logger.info(f"Adaptive layer not available (first run?): {e}")
+        strategy_weights = {s.strategy_name: 1.0 for s in strategies}
+    # Ensure weights are accessible by both config names AND class names
+    # (config: "ema_pullback", class: "EMAPullback")
+    _extra_weights = {}
+    for s in strategies:
+        # Find weight by config-style name (lowercase) or class name
+        for k, v in strategy_weights.items():
+            if k.lower().replace("_", "") == s.strategy_name.lower().replace("_", ""):
+                _extra_weights[s.strategy_name] = v
+                break
+        if s.strategy_name not in _extra_weights:
+            _extra_weights[s.strategy_name] = strategy_weights.get(s.strategy_name, 1.0)
+    strategy_weights.update(_extra_weights)
+
     # ── Daily reset if requested ───────────────────────────────────
     if args.reset_daily:
         risk.reset_daily()
@@ -630,11 +669,15 @@ def main():
                 audit.log_signal(sym, strategy.strategy_name, setup.setup_quality, setup.reason)
                 logger.info(f"SIGNAL: {sym} [{strategy.strategy_name}] grade={setup.setup_quality} entry={setup.entry_price:.2f} sl={setup.stop_loss:.2f} rr={setup.reward_risk_ratio:.1f}")
 
+                # Adaptive weight: scale position size by strategy performance
+                adapt_weight = strategy_weights.get(strategy.strategy_name, 1.0)
+                weighted_capital = risk.sizer.max_per_trade() * adapt_weight
+
                 risk_check = risk.check_trade(
                     symbol=sym,
                     entry_price=setup.entry_price,
                     stop_loss=setup.stop_loss,
-                    proposed_qty=max(1, int(risk.sizer.max_per_trade() / setup.entry_price)),
+                    proposed_qty=max(1, int(weighted_capital / setup.entry_price)),
                     open_positions_value=sum(p.qty * p.current_price for p in broker.get_positions()),
                     setup_quality=setup.setup_quality,
                     charges_estimate=charges_est,
