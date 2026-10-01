@@ -40,11 +40,14 @@ ADAPTIVE_LOG_DIR = ROOT / "adaptive" / "logs"
 TRADE_LOG_DIR = ROOT / "journaling" / "logs"
 
 # Thresholds for disabling a strategy
-MIN_TRADES_TO_EVALUATE = 5      # need at least N trades to judge
+MIN_TRADES_TO_EVALUATE = 10     # need at least N trades to judge (5 is just noise)
 MIN_WIN_RATE = 0.30             # below 30% WR -> disable
-MIN_PROFIT_FACTOR = 0.80        # below 0.8 PF -> disable
-MIN_SHARPE = -0.5               # negative Sharpe -> disable
-COOLDOWN_WEEKS = 2              # re-evaluate disabled strategies after 2 weeks
+MIN_PROFIT_FACTOR = 0.80        # below 0.8 PF (after estimated costs) -> disable
+MAX_CONSEC_LOSSES = 6           # 6+ losses in a row -> disable
+BOOST_MIN_TRADES = 30           # a strategy must have this many trades before it can be sized up
+BOOST_MAX_WEIGHT = 1.25         # never size up more than this — thin samples lie
+TRIAL_WEIGHT = 0.5              # weight on re-entry after a cooldown
+COOLDOWN_WEEKS = 2              # disabled strategies stay off this long, then get a trial
 DEFAULT_WEIGHT = 1.0            # baseline capital weight
 
 
@@ -84,6 +87,7 @@ class AdaptiveState:
     decisions: List[dict]
     total_trades_evaluated: int
     overall_net_pnl: float
+    trial_since: Dict[str, str] = field(default_factory=dict)  # strategy -> trial start (only post-trial trades count)
 
 
 def load_trades(weeks: int) -> List[dict]:
@@ -108,6 +112,24 @@ def load_trades(weeks: int) -> List[dict]:
     return all_trades
 
 
+def _cost_adjusted_pnl(t: dict) -> float:
+    """Journaled net_pnl is gross when charges were never recorded (charges == 0).
+    In that case subtract an estimate so the evaluator judges strategies after costs."""
+    pnl = float(t.get("net_pnl", 0) or 0)
+    if float(t.get("charges") or 0) > 0:
+        return pnl
+    try:
+        from utils.charge_calculator import estimate_round_trip_charges
+        entry = float(t.get("entry_price") or 0)
+        exit_ = float(t.get("exit_price") or entry)
+        qty = int(t.get("entry_qty") or 0)
+        if entry > 0 and qty > 0:
+            return pnl - estimate_round_trip_charges(entry, exit_, qty)
+    except Exception:
+        pass
+    return pnl
+
+
 def compute_strategy_metrics(trades: List[dict]) -> Dict[str, StrategyMetrics]:
     """Compute per-strategy performance metrics from trade list."""
     by_strategy = defaultdict(list)
@@ -121,7 +143,9 @@ def compute_strategy_metrics(trades: List[dict]) -> Dict[str, StrategyMetrics]:
         pnls = []
 
         for t in strades:
-            pnl = float(t.get("net_pnl", 0) or 0)
+            if t.get("net_pnl") is None:
+                continue  # still open — not a result yet
+            pnl = _cost_adjusted_pnl(t)
             pnls.append(pnl)
             m.total_trades += 1
             if pnl > 0:
@@ -139,11 +163,11 @@ def compute_strategy_metrics(trades: List[dict]) -> Dict[str, StrategyMetrics]:
         m.profit_factor = m.gross_profit / max(m.gross_loss, 0.01)
         m.avg_pnl = m.net_pnl / max(m.total_trades, 1)
 
-        # Sharpe (trade-level)
+        # Trade-level mean/std ratio — informational only (not annualised, not used to decide)
         if len(pnls) > 2:
             arr = np.array(pnls)
             std = arr.std()
-            m.sharpe = round(float((arr.mean() / max(std, 0.01)) * np.sqrt(252)), 2)
+            m.sharpe = round(float(arr.mean() / max(std, 0.01)), 2)
         else:
             m.sharpe = 0.0
 
@@ -162,96 +186,90 @@ def compute_strategy_metrics(trades: List[dict]) -> Dict[str, StrategyMetrics]:
     return results
 
 
+def _weeks_since(iso: str) -> float:
+    try:
+        return (datetime.now(IST) - datetime.fromisoformat(iso)).total_seconds() / (7 * 86400)
+    except Exception:
+        return 0.0
+
+
 def evaluate(weeks: int = 4) -> AdaptiveState:
-    """Main evaluation: load trades, compute metrics, make decisions."""
+    """Main evaluation: load trades, compute metrics, make decisions.
+
+    Disabled / trial status lives in the saved state, not in this week's trades:
+    a disabled strategy stops trading, so it would otherwise drop out of the
+    metrics and quietly come back at full size.
+    """
     trades = load_trades(weeks)
     logger.info(f"Loaded {len(trades)} trades from past {weeks} weeks")
+    now_str = datetime.now(IST).isoformat()
 
+    prev_state = _load_existing_state()
     if not trades:
         logger.warning("No trades found — keeping current state unchanged")
-        return _load_existing_state()
+        return prev_state or AdaptiveState(now_str, weeks, {}, {}, [], 0, 0.0)
 
-    metrics = compute_strategy_metrics(trades)
+    prev_disabled = dict(prev_state.disabled_strategies) if prev_state else {}
+    prev_trial = dict(prev_state.trial_since) if prev_state else {}
+
     decisions: List[AdaptiveDecision] = []
     weights: Dict[str, float] = {}
     disabled: Dict[str, str] = {}
-    now_str = datetime.now(IST).isoformat()
+    trial_since: Dict[str, str] = {}
 
-    # Load previous state to check cooldowns
-    prev_state = _load_existing_state()
-    prev_disabled = prev_state.disabled_strategies if prev_state else {}
+    names = sorted({t.get("strategy", "unknown") for t in trades} | set(prev_disabled) | set(prev_trial))
 
-    for strategy, m in metrics.items():
+    for strategy in names:
+        since = prev_trial.get(strategy)
+        # On trial, only trades taken since the trial began count against it
+        s_trades = [t for t in trades if t.get("strategy", "unknown") == strategy
+                    and (not since or t["_date"] >= since[:10])]
+        m = compute_strategy_metrics(s_trades).get(strategy) or StrategyMetrics(strategy=strategy)
+
         reason_parts = []
         action = "maintain"
         weight = DEFAULT_WEIGHT
 
-        if m.total_trades < MIN_TRADES_TO_EVALUATE:
-            reason_parts.append(f"only {m.total_trades} trades (need {MIN_TRADES_TO_EVALUATE})")
-            action = "maintain"
-            weight = DEFAULT_WEIGHT
-        else:
-            # Check disable conditions
-            should_disable = False
-
-            if m.win_rate < MIN_WIN_RATE:
-                reason_parts.append(f"WR {m.win_rate:.0%} < {MIN_WIN_RATE:.0%}")
-                should_disable = True
-
-            if m.profit_factor < MIN_PROFIT_FACTOR:
-                reason_parts.append(f"PF {m.profit_factor:.2f} < {MIN_PROFIT_FACTOR}")
-                should_disable = True
-
-            if m.sharpe < MIN_SHARPE:
-                reason_parts.append(f"Sharpe {m.sharpe:.2f} < {MIN_SHARPE}")
-                should_disable = True
-
-            if m.max_consecutive_losses >= 6:
-                reason_parts.append(f"max consec losses {m.max_consecutive_losses} >= 6")
-                should_disable = True
-
-            if should_disable:
-                action = "disable"
-                weight = 0.0
-                disabled[strategy] = now_str
+        if strategy in prev_disabled:
+            waited = _weeks_since(prev_disabled[strategy])
+            if waited < COOLDOWN_WEEKS:
+                disabled[strategy] = prev_disabled[strategy]  # keep the ORIGINAL disable date
+                action, weight = "disable", 0.0
+                reason_parts.append(f"cooling down {waited:.1f}/{COOLDOWN_WEEKS}w")
             else:
-                # Assign weight proportional to performance
-                # Sharpe-based weighting: normalize to 0.5x-2.0x range
-                if m.sharpe >= 2.0:
-                    weight = 2.0
-                    reason_parts.append(f"strong performer (Sharpe {m.sharpe:.1f})")
-                elif m.sharpe >= 1.0:
-                    weight = 1.5
-                    reason_parts.append(f"good performer (Sharpe {m.sharpe:.1f})")
-                elif m.sharpe >= 0:
+                trial_since[strategy] = now_str
+                action, weight = "enable", TRIAL_WEIGHT
+                reason_parts.append(
+                    f"cooldown over ({waited:.1f}w) — trial at {TRIAL_WEIGHT}x, judged on new trades only")
+        elif m.total_trades < MIN_TRADES_TO_EVALUATE:
+            reason_parts.append(f"only {m.total_trades} trades (need {MIN_TRADES_TO_EVALUATE})")
+            if since:  # still proving itself after a cooldown
+                trial_since[strategy] = since
+                weight = TRIAL_WEIGHT
+        else:
+            fails = []
+            if m.win_rate < MIN_WIN_RATE:
+                fails.append(f"WR {m.win_rate:.0%} < {MIN_WIN_RATE:.0%}")
+            if m.profit_factor < MIN_PROFIT_FACTOR:
+                fails.append(f"PF {m.profit_factor:.2f} < {MIN_PROFIT_FACTOR}")
+            if m.max_consecutive_losses >= MAX_CONSEC_LOSSES:
+                fails.append(f"{m.max_consecutive_losses} losses in a row")
+
+            if fails:
+                action, weight = "disable", 0.0
+                disabled[strategy] = now_str
+                reason_parts.extend(fails)
+            else:
+                action = "enable"
+                if m.profit_factor >= 1.5 and m.win_rate >= 0.5 and m.total_trades >= BOOST_MIN_TRADES:
+                    weight = BOOST_MAX_WEIGHT
+                    reason_parts.append(f"proven: PF {m.profit_factor:.2f}, WR {m.win_rate:.0%} over {m.total_trades} trades")
+                elif m.profit_factor >= 1.0:
                     weight = 1.0
-                    reason_parts.append(f"neutral (Sharpe {m.sharpe:.1f})")
+                    reason_parts.append(f"profitable after costs (PF {m.profit_factor:.2f})")
                 else:
                     weight = 0.5
-                    reason_parts.append(f"underperforming (Sharpe {m.sharpe:.1f})")
-
-                # Boost if high win rate AND good PF
-                if m.win_rate >= 0.55 and m.profit_factor >= 1.5:
-                    weight = min(weight + 0.5, 2.0)
-                    reason_parts.append(f"WR+PF boost ({m.win_rate:.0%}/{m.profit_factor:.1f})")
-
-                action = "enable"
-
-        # Check cooldown for previously disabled strategies
-        if strategy in prev_disabled and action == "disable":
-            disable_date = prev_disabled[strategy]
-            try:
-                dd = datetime.fromisoformat(disable_date)
-                weeks_disabled = (datetime.now(IST) - dd).days / 7
-                if weeks_disabled >= COOLDOWN_WEEKS:
-                    reason_parts.append(f"cooldown expired ({weeks_disabled:.1f}w) — re-enabling at 0.5x for trial")
-                    action = "enable"
-                    weight = 0.5
-                    # Don't keep in disabled
-                    if strategy in disabled:
-                        del disabled[strategy]
-            except Exception:
-                pass
+                    reason_parts.append(f"losing after costs (PF {m.profit_factor:.2f}) — half size")
 
         weights[strategy] = round(weight, 2)
 
@@ -264,8 +282,8 @@ def evaluate(weeks: int = 4) -> AdaptiveState:
                 "trades": m.total_trades,
                 "win_rate": round(m.win_rate, 3),
                 "pf": round(m.profit_factor, 2),
-                "sharpe": m.sharpe,
-                "net_pnl": m.net_pnl,
+                "trade_ratio": m.sharpe,
+                "net_pnl_after_costs": m.net_pnl,
                 "avg_pnl": round(m.avg_pnl, 2),
                 "max_consec_losses": m.max_consecutive_losses,
                 "regimes": m.regimes,
@@ -276,9 +294,9 @@ def evaluate(weeks: int = 4) -> AdaptiveState:
 
         emoji = {"enable": "+", "disable": "X", "maintain": "="}[action]
         logger.info(
-            f"[{emoji}] {strategy:20s} | weight={weight:.1f}x | "
+            f"[{emoji}] {strategy:20s} | weight={weight:.2f}x | "
             f"trades={m.total_trades} WR={m.win_rate:.0%} PF={m.profit_factor:.2f} "
-            f"Sharpe={m.sharpe:.1f} P&L=Rs.{m.net_pnl:,.0f} | {'; '.join(reason_parts)}"
+            f"P&L(after costs)=Rs.{m.net_pnl:,.0f} | {'; '.join(reason_parts)}"
         )
 
     state = AdaptiveState(
@@ -288,7 +306,8 @@ def evaluate(weeks: int = 4) -> AdaptiveState:
         disabled_strategies=disabled,
         decisions=[asdict(d) for d in decisions],
         total_trades_evaluated=len(trades),
-        overall_net_pnl=round(sum(float(t.get("net_pnl", 0) or 0) for t in trades), 2),
+        overall_net_pnl=round(sum(_cost_adjusted_pnl(t) for t in trades if t.get("net_pnl") is not None), 2),
+        trial_since=trial_since,
     )
 
     _save_state(state)

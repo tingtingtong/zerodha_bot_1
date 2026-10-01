@@ -669,15 +669,16 @@ def main():
                 audit.log_signal(sym, strategy.strategy_name, setup.setup_quality, setup.reason)
                 logger.info(f"SIGNAL: {sym} [{strategy.strategy_name}] grade={setup.setup_quality} entry={setup.entry_price:.2f} sl={setup.stop_loss:.2f} rr={setup.reward_risk_ratio:.1f}")
 
-                # Adaptive weight: scale position size by strategy performance
+                # Adaptive weight scales the risk budget inside check_trade
+                # (proposed_qty is ignored there, so it can't carry the weight)
                 adapt_weight = strategy_weights.get(strategy.strategy_name, 1.0)
-                weighted_capital = risk.sizer.max_per_trade() * adapt_weight
 
                 risk_check = risk.check_trade(
                     symbol=sym,
                     entry_price=setup.entry_price,
                     stop_loss=setup.stop_loss,
-                    proposed_qty=max(1, int(weighted_capital / setup.entry_price)),
+                    proposed_qty=max(1, int(risk.sizer.max_per_trade() / setup.entry_price)),
+                    size_multiplier=adapt_weight,
                     open_positions_value=sum(p.qty * p.current_price for p in broker.get_positions()),
                     setup_quality=setup.setup_quality,
                     charges_estimate=charges_est,

@@ -58,6 +58,7 @@ class RiskEngine:
         proposed_qty: int, open_positions_value: float,
         setup_quality: str, charges_estimate: float,
         avg_daily_volume: int = 0,
+        size_multiplier: float = 1.0,
     ) -> RiskCheckResult:
 
         if self.kill_switch_active:
@@ -82,9 +83,9 @@ class RiskEngine:
             return RiskCheckResult(RiskDecision.REJECTED,
                                    f"{self.consec_halt}_consec_losses_halt")
 
-        size_mult = 1.0
+        size_mult = max(size_multiplier, 0.0)  # per-strategy weight from the adaptive layer
         if self.consecutive_losses >= 2:
-            size_mult = self.size_reduction
+            size_mult *= self.size_reduction
             logger.warning(f"Consecutive losses {self.consecutive_losses} → size at {size_mult*100:.0f}%")
 
         if self.last_loss_time is not None:
