@@ -54,7 +54,7 @@ class MeanReversionStrategy(BaseStrategy):
         # Time gate: block the 09:15–09:44 window to avoid first-candle whipsaws.
         if "timestamp" in df_primary.columns:
             last_ts = pd.to_datetime(df_primary["timestamp"].iloc[-1], utc=True).tz_convert(_IST)
-            if last_ts.date() == pd.Timestamp.now(tz=_IST).date():
+            if self._clock(df_primary).date() == last_ts.date():
                 if last_ts.strftime("%H:%M") < "09:45":
                     return self._no_trade(symbol, "pre_0945_window_blocked")
 

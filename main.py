@@ -84,8 +84,12 @@ def build_data_registry(config: dict):
         import json
         with open(token_path) as f:
             tok = json.load(f).get("access_token", "")
+        if mode == "zerodha":
+            return DataProviderRegistry.build_zerodha_only(api_key, tok)
         return DataProviderRegistry.build_zerodha_primary(api_key, tok)
-    except Exception:
+    except Exception as e:
+        if mode == "zerodha":
+            raise RuntimeError(f"Zerodha data provider unavailable (no yfinance fallback): {e}")
         return DataProviderRegistry.build_free_only()
 
 

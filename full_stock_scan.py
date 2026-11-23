@@ -158,7 +158,7 @@ def run_symbol(symbol, daily_df, primary_df, strategies):
 
 def main():
     from data_providers.provider_registry import DataProviderRegistry
-    data = DataProviderRegistry.build_free_only()
+    data = DataProviderRegistry.build_research()
     from_dt = datetime(2021, 1, 1, tzinfo=IST)
     to_dt   = datetime(2026, 3, 1, tzinfo=IST)
 

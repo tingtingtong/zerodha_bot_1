@@ -57,7 +57,7 @@ class EMABreakdownStrategy(BaseStrategy):
             return self._no_trade(symbol, "insufficient_15m_data")
 
         import pytz
-        now_str = pd.Timestamp.now(tz=pytz.timezone("Asia/Kolkata")).strftime("%H:%M")
+        now_str = self._clock(df_primary).strftime("%H:%M")
         if now_str < self.NO_TRADE_BEFORE or now_str > self.NO_TRADE_AFTER:
             return self._no_trade(symbol, f"outside_window_{now_str}")
 

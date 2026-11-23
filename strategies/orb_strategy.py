@@ -43,7 +43,7 @@ class ORBStrategy(BaseStrategy):
         return "15m"
 
     def _get_today_candles(self, df: pd.DataFrame) -> pd.DataFrame:
-        today = pd.Timestamp.now(tz=IST).date()
+        today = self._clock(df).date()
         # Prefer the 'timestamp' column (set by FreeNSEProvider._normalize)
         # Fall back to df.index only if it's a genuine DatetimeIndex
         if "timestamp" in df.columns:
@@ -65,7 +65,7 @@ class ORBStrategy(BaseStrategy):
         if df_primary is None or len(df_primary) < 5:
             return self._no_trade(symbol, "insufficient_data")
 
-        now_str = pd.Timestamp.now(tz=IST).strftime("%H:%M")
+        now_str = self._clock(df_primary).strftime("%H:%M")
         no_trade_after = self.NO_TRADE_AFTER_SIDEWAYS if regime == "sideways" else self.NO_TRADE_AFTER
         if now_str < self.NO_TRADE_BEFORE or now_str > no_trade_after:
             return self._no_trade(symbol, f"outside_window_{now_str}")

@@ -197,7 +197,7 @@ def _backtest_symbol(symbol, strategy_name, start, end, capital):
         from config.capital_tiers import get_tier
 
         interval = _pick_interval(start)
-        data = DataProviderRegistry.build_free_only()
+        data = DataProviderRegistry.build_research()
         strategy = get_strategy(strategy_name)
         regime_bullish = STRATEGY_REGIME[strategy_name]
 

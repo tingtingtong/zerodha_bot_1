@@ -141,7 +141,7 @@ market_research:
   screener_require_positive_earnings: true  # any loss quarter → penalty
 
 data:
-  provider_mode: "zerodha_with_fallback"  # free_only | zerodha | zerodha_with_fallback
+  provider_mode: "zerodha_with_fallback"  # "zerodha" = Kite only, needs paid Connect data plan; free_only | zerodha | zerodha_with_fallback
   cache_dir: ".cache/market_data"
   cache_expiry_minutes: 15
   historical_lookback_days: 365

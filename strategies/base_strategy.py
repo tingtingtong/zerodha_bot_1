@@ -69,6 +69,18 @@ class BaseStrategy(ABC):
     def required_timeframe(self) -> str:
         pass
 
+    def _clock(self, df: pd.DataFrame) -> pd.Timestamp:
+        """'Now' for time-window checks: wall-clock when the last candle is from today
+        (live), otherwise the last candle's own timestamp (backtests/replays)."""
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        now = pd.Timestamp.now(tz=ist)
+        if df is not None and "timestamp" in df.columns and len(df):
+            last = pd.to_datetime(df["timestamp"].iloc[-1], utc=True).tz_convert(ist)
+            if last.date() != now.date():
+                return last
+        return now
+
     def _no_trade(self, symbol: str, reason: str) -> TradeSetup:
         return TradeSetup(
             signal=Signal.NO_TRADE, symbol=symbol,

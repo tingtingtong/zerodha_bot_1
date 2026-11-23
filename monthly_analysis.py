@@ -42,7 +42,7 @@ END   = "2026-03-01"
 
 def load_data(symbol, start, end):
     from data_providers.provider_registry import DataProviderRegistry
-    data = DataProviderRegistry.build_free_only()
+    data = DataProviderRegistry.build_research()
     from_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=IST)
     to_dt   = datetime.strptime(end,   "%Y-%m-%d").replace(tzinfo=IST)
     days_back = (datetime.now(IST) - from_dt).days

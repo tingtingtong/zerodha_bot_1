@@ -38,7 +38,7 @@ def run_backtest(
     from utils.charge_calculator import estimate_round_trip_charges, Segment
     from config.capital_tiers import get_tier
 
-    data = DataProviderRegistry.build_free_only()
+    data = DataProviderRegistry.build_research()
     strategy = get_strategy(strategy_name)
 
     from_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=IST)

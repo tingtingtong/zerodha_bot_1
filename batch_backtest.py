@@ -22,6 +22,8 @@ import pytz
 import pandas as pd
 
 ROOT = Path(__file__).parent
+from dotenv import load_dotenv
+load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT))
 
 logging.basicConfig(
@@ -38,10 +40,24 @@ IST = pytz.timezone("Asia/Kolkata")
 ALL_STRATEGIES = ["ema_pullback", "ema_breakdown", "mean_reversion", "orb"]
 
 
+_DATA = None
+SLIPPAGE_PER_SIDE = 0.0005  # 5 bps adverse fill on entry and exit
+
+
+def _get_data():
+    """One shared registry so all workers share Kite's 3 req/s throttle and instrument cache."""
+    global _DATA
+    if _DATA is None:
+        from data_providers.provider_registry import DataProviderRegistry
+        _DATA = DataProviderRegistry.build_research()
+    return _DATA
+
+
 def _pick_interval(start: str) -> str:
-    """Auto-select yfinance interval based on how far back start date is."""
+    """Pick interval by how far back start is. Zerodha serves years of 15m; yfinance only ~58 days."""
     days_ago = (datetime.now(IST) - datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=IST)).days
-    if days_ago <= 58:
+    zerodha = _get_data().providers[0].provider_name.startswith("Zerodha")
+    if days_ago <= 58 or (zerodha and days_ago <= 1000):
         return "15m"
     elif days_ago <= 729:
         return "1h"
@@ -67,7 +83,7 @@ def backtest_one(symbol: str, strategy_name: str, start: str, end: str,
     }
 
     try:
-        data = DataProviderRegistry.build_free_only()
+        data = _get_data()
         strategy = get_strategy(strategy_name)
 
         from_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=IST)
@@ -134,6 +150,7 @@ def backtest_one(symbol: str, strategy_name: str, start: str, end: str,
             is_short = setup.signal.value == "short"
             net_pnl = _simulate(setup, qty, future, charges, is_short)
 
+            net_pnl -= qty * setup.entry_price * SLIPPAGE_PER_SIDE * 2
             account += net_pnl
             trades.append({
                 "symbol": symbol, "strategy": strategy_name,
@@ -215,6 +232,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategies", nargs="+", default=ALL_STRATEGIES)
     parser.add_argument("--workers", type=int, default=3)
+    parser.add_argument("--limit", type=int, default=None, help="Only first N symbols of NIFTY_200")
     parser.add_argument("--capital", type=float, default=200000)
     parser.add_argument("--days", type=int, default=None,
                         help="Lookback days from today (e.g. 90 for 3 months). Overrides --start/--end.")
@@ -235,14 +253,15 @@ def main():
 
     interval = _pick_interval(start)
 
-    total = len(NIFTY_200) * len(args.strategies)
+    total = len(NIFTY_200[:args.limit] if args.limit else NIFTY_200) * len(args.strategies)
     logger.info(f"Batch backtest: {len(NIFTY_200)} stocks × {len(args.strategies)} strategies = {total} runs")
     logger.info(f"Period: {start} to {end} | Interval: {interval} | Workers: {args.workers}")
 
     out_dir = ROOT / "backtesting/results"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    tasks = [(sym, strat) for sym in NIFTY_200 for strat in args.strategies]
+    universe = NIFTY_200[:args.limit] if args.limit else NIFTY_200
+    tasks = [(sym, strat) for sym in universe for strat in args.strategies]
     results = []
     done = 0
 

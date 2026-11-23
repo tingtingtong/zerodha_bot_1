@@ -14,6 +14,11 @@ _INTERVAL_TTL = {
     "1h": 3600, "60m": 3600, "1d": 1800,
 }
 
+# Stale cache grace period multiplier — if all providers fail, serve cached data
+# up to this many × TTL old rather than raising DataUnavailableError.
+# For 15m candles: 5 × 900s = 75 min grace period.
+_STALE_CACHE_MULTIPLIER = 5
+
 
 class DataProviderRegistry:
 
@@ -61,6 +66,14 @@ class DataProviderRegistry:
                         logger.warning(f"[{p.provider_name}] auth failures >= {self._AUTH_FAILURE_THRESHOLD} — skipping for this session")
                 else:
                     logger.warning(f"[{p.provider_name}] {symbol}/{interval} failed: {e}")
+
+        # All providers failed — serve stale cache rather than dropping the symbol
+        stale_ttl = ttl * _STALE_CACHE_MULTIPLIER
+        if cached_df is not None and (time.time() - cached_at) < stale_ttl:
+            age_min = int((time.time() - cached_at) / 60)
+            logger.warning(f"[cache:stale] {symbol}/{interval} — serving {age_min}min-old data (all providers failed)")
+            return cached_df
+
         raise DataUnavailableError(f"All providers failed for {symbol}/{interval}. Last: {last_err}")
 
     def get_quote(self, symbol: str):
@@ -90,16 +103,39 @@ class DataProviderRegistry:
         return cls([FreeNSEProvider()])
 
     @classmethod
+    def build_zerodha_only(cls, api_key: str, access_token: str) -> "DataProviderRegistry":
+        """Zerodha Kite as the sole source — no yfinance fallback."""
+        from .zerodha_provider import ZerodhaMarketDataProvider
+        return cls([ZerodhaMarketDataProvider(api_key, access_token)])
+
+    @classmethod
     def build_zerodha_primary(cls, api_key: str, access_token: str) -> "DataProviderRegistry":
         from .free_nse_provider import FreeNSEProvider
         from .zerodha_provider import ZerodhaMarketDataProvider
         return cls([ZerodhaMarketDataProvider(api_key, access_token), FreeNSEProvider()])
 
     @classmethod
+    def build_research(cls) -> "DataProviderRegistry":
+        """Registry for backtests/research. Uses Zerodha alone when the account has market-data
+        permission (paid Connect plan); otherwise yfinance (~60 days of 15m)."""
+        import json, os
+        try:
+            with open("config/.zerodha_token.json") as f:
+                tok = json.load(f).get("access_token", "")
+            reg = cls.build_zerodha_only(os.getenv("ZERODHA_API_KEY", ""), tok)
+            reg.providers[0].kite.ltp(["NSE:SBIN"])  # raises PermissionException on the free plan
+            return reg
+        except Exception as e:
+            logger.info(f"Zerodha market data unavailable ({e}); using yfinance")
+            return cls.build_free_only()
+
+    @classmethod
     def from_config(cls, config: dict, api_key: str = "", access_token: str = "") -> "DataProviderRegistry":
         mode = config.get("data", {}).get("provider_mode", "free_only")
         if mode == "free_only":
             return cls.build_free_only()
-        if mode in ("zerodha", "zerodha_with_fallback"):
+        if mode == "zerodha":
+            return cls.build_zerodha_only(api_key, access_token)
+        if mode == "zerodha_with_fallback":
             return cls.build_zerodha_primary(api_key, access_token)
         return cls.build_free_only()
