@@ -10,7 +10,7 @@ DASHBOARD_SCRIPT="$HOME/zerodhaBot/deploy/start_dashboard_cloud.sh"
 chmod +x "$START_SCRIPT" "$DASHBOARD_SCRIPT"
 
 # Remove any existing ZerodhaBot cron entries
-crontab -l 2>/dev/null | grep -v "zerodhaBot\|run_swing\|auto_deploy\|start_paper\|start_bot\|start_dashboard" | crontab - 2>/dev/null || true
+crontab -l 2>/dev/null | grep -v "zerodhaBot\|run_swing\|health_check\|maintenance\|auto_deploy\|start_paper\|start_bot\|start_dashboard" | crontab - 2>/dev/null || true
 
 # 1) Auto-deploy: pull latest code at 8:30 AM IST, Mon-Fri
 (crontab -l 2>/dev/null; echo "30 8 * * 1-5 bash $DEPLOY_SCRIPT >> $HOME/zerodhaBot/journaling/logs/deploy.log 2>&1") | crontab -
@@ -26,8 +26,13 @@ SWING_SCRIPT="$HOME/zerodhaBot/deploy/run_swing.sh"
 chmod +x "$SWING_SCRIPT"
 (crontab -l 2>/dev/null; echo "50 15 * * 1-5 bash $SWING_SCRIPT >> $HOME/zerodhaBot/journaling/logs/swing_cron.log 2>&1") | crontab -
 
+# 5) Health check 9:25 AM Mon-Fri (Telegram alert if bot down / disk full); weekly log cleanup Sun 10:00
+chmod +x "$HOME/zerodhaBot/deploy/health_check.sh" "$HOME/zerodhaBot/deploy/maintenance.sh" "$HOME/zerodhaBot/deploy/notify.sh"
+(crontab -l 2>/dev/null; echo "25 9 * * 1-5 bash $HOME/zerodhaBot/deploy/health_check.sh >> $HOME/zerodhaBot/journaling/logs/health.log 2>&1") | crontab -
+(crontab -l 2>/dev/null; echo "0 10 * * 0 bash $HOME/zerodhaBot/deploy/maintenance.sh >> $HOME/zerodhaBot/journaling/logs/maintenance.log 2>&1") | crontab -
+
 echo "Cron jobs set:"
-crontab -l | grep -E "auto_deploy|start_paper|start_dashboard|run_swing"
+crontab -l | grep -E "auto_deploy|start_paper|start_dashboard|run_swing|health_check|maintenance"
 echo ""
 echo "Schedule (IST — server timezone is Asia/Kolkata):"
 echo "  8:30 AM — git pull (auto-deploy latest code)"
