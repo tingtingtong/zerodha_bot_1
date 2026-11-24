@@ -54,3 +54,4 @@ journaling/swing_run.log
 # adaptive layer runtime state (generated per machine; deploys must not overwrite it)
 adaptive/adaptive_state.json
 adaptive/logs/
+deploy/run_hidden.vbs
