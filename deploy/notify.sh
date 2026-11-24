@@ -2,6 +2,7 @@
 # Usage: notify.sh "message"  — sends a Telegram message via the bot's notifier.
 cd ~/zerodhaBot || exit 1
 source venv/bin/activate
+export BOT_INSTANCE="GCP"  # GCP .env carries BOT_INSTANCE=local; env var wins over dotenv
 MSG="$1" python -c "
 import os, sys
 sys.path.insert(0, '.')
